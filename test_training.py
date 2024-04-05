@@ -5,21 +5,44 @@
     to be run over for the purpose of our experiments.
 """
 
+from pyparsing import col
+from tqdm.auto import tqdm
 import openml
+import pandas as pd
 from numpy import ndarray
 import torch
 import torch.nn as nn
-
-task_num: int = 0  # this identifies the dataset inside the OpenML-CC18 benchmark suite
-hidden_activation_type: str = "relu"
-
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import KFold
 
 import torch.optim as optim
 import torch.nn.functional as F
 
+# import dataset and dataloader for pytoarch
+import torch.utils.data
+
+from accelerate import Accelerator
+
+# FIXED PARAMETERS
+hidden_activation_type: str = "relu"
+batch_size: int = 128
+length_scale: float = (
+    0  # defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
+)
+learning_rate: float = 0.001
+num_epochs: int = 100
+num_crossval_folds: int = 3
+
+# HYPERPARAMETERS TO INVESTIGATE
+task_num: int = 0  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
+dropout_rate: float = 0.001
+model_precision: float = 0.2  # also known as "tau". Defines the L2 regularization term
+num_mcdropout_iterations: int = 10
+num_layers: int = 4
+
+
 # Convert the class labels to one-hot encoded vectors
+
 
 def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     # Use LabelEncoder to encode the class array
@@ -29,11 +52,17 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     num_classes = len(set(encoded_labels))
 
     # Convert the encoded labels to one-hot encoded vectors using PyTorch
-    class_array_one_hot = torch.nn.functional.one_hot(torch.tensor(encoded_labels), num_classes)
+    class_array_one_hot = torch.nn.functional.one_hot(
+        torch.tensor(encoded_labels), num_classes
+    )
+    if class_array_one_hot.shape[1] == 2:
+        print(f'Binary classification detected. Converting to single vector')
+        # Convert binary classification to a single vector
+        class_array_one_hot = class_array_one_hot[:, 1].unsqueeze(1)
     return class_array_one_hot
-    
 
-def get_dataset() -> tuple[ndarray, ndarray, str, str, int]:
+
+def get_dataset() -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
     cc18_suite = openml.study.get_suite(99)
     tasks = cc18_suite.tasks
@@ -42,18 +71,26 @@ def get_dataset() -> tuple[ndarray, ndarray, str, str, int]:
     test_dataset = test_dataset_obj.get_data()
 
     x = test_dataset[0].drop(columns=[test_task.target_name])
-    y = test_dataset[0][test_task.target_name]
+    x = pd.get_dummies(x)
+    x = torch.tensor(x.values.astype(float), dtype=torch.float32)
+    
+    y = test_dataset[0][test_task.target_name].to_numpy()
     name = test_dataset_obj.name
     y = prepare_prediction_array(y)
-    prediction_type = test_task.task_type
-    if prediction_type == 'Supervised Classification':
-        prediction_type = 'multiclass classification' if len(y[0]) > 1 else 'binary classification'
-        # TODO: I should implement the multilabel classification
-    elif 'Regression' in prediction_type:
-        prediction_type = 'regression'
-    else:
-        raise ValueError(f"Prediction type {prediction_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification")
     
+    prediction_type = test_task.task_type
+    if prediction_type == "Supervised Classification":
+        prediction_type = (
+            "multiclass classification" if len(y[0]) > 1 else "binary classification"
+        )
+        # TODO: I should implement the multilabel classification
+    elif "Regression" in prediction_type:
+        prediction_type = "regression"
+    else:
+        raise ValueError(
+            f"Prediction type {prediction_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
+        )
+
     output_size = len(y[0])
     return x, y, name, prediction_type, output_size
 
@@ -66,122 +103,246 @@ class MLP(nn.Module):
         hidden_activation_type: str = "relu",
         output_type: str = "regression",
         output_size: int = 1,
-    ):
+        num_mcdropout_iterations: int = 2,
+        dropout_rate: float = 0.05,
+    ) -> None:
         super(MLP, self).__init__()
-        self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(input_size, 1000))  # First layer
 
-        for _ in range(num_layers - 1):
-            self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
+        
 
-        self.layers.append(nn.Linear(1000, 1))  # Output layer
         if hidden_activation_type == "relu":
             self.activation = nn.ReLU()
         else:
-            raise ValueError(f"Activation type {hidden_activation_type} not supported. Supported types are: relu.")
-         
+            raise ValueError(
+                f"Activation type {hidden_activation_type} not supported. Supported types are: relu."
+            )
+            
+        # Define the main layers in the network. We use a simple structure
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(input_size, 1000))  # First layer
+        self.layers.append(self.activation)
+        self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
+        for _ in range(num_layers - 1):
+            self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
+            self.layers.append(self.activation)
+            self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
+
         if output_type == "regression":
             self.output_activation = nn.Identity()
+            self.task_type = "regression"
         elif output_type == "binary classification":
             self.output_activation = nn.Sigmoid()
+            self.task_type = "classification"
         elif output_type == "multiclass classification":
             self.output_activation = nn.Softmax(dim=1)
+            self.task_type = "classification"
         elif output_type == "multilabel classification":
             self.output_activation = nn.Sigmoid()
+            self.task_type = "classification"
         else:
-            raise ValueError(f"Output type {output_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification")
-            
-        
-        self.input_layer = nn.Linear(input_size, 1000)
+            raise ValueError(
+                f"Output type {output_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
+            )
+
         self.output_layer = nn.Linear(1000, output_size)
 
-    def forward(self, x):
-        x = self.activation(self.input_layer(x))
+        if num_mcdropout_iterations > 1:
+            self.num_mcdropout_iterations = num_mcdropout_iterations
+        else:
+            raise (
+                ValueError(
+                    f"num_mcdropout_iterations must be greater than 1. Found {num_mcdropout_iterations}."
+                )
+            )
+
+        if dropout_rate > 0 and dropout_rate < 1:
+            self.dropout_rate = dropout_rate
+        else:
+            raise (
+                ValueError(
+                    f"dropout_rate must be between 0 and 1. Found {dropout_rate}."
+                )
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             x = self.activation(layer(x))
         x = self.output_layer(x)
         x = self.output_activation(x)
         return x
 
-    
+    def eval_mc_dropout(
+        self, x: torch.Tensor
+    ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
+        """This method runs the MCDropout at validation time. It returns a list of predictions
 
-def train(model, x, y, num_folds, num_epochs, learning_rate, mc_dropout_prob):
+        Parameters
+        ----------
+        x : torch.Tensor
+            input tensor
+
+        Returns
+        -------
+        tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]
+            the output is composed as follow: a list of tensors, containing each predictions
+            for the num_mcdropout_iterations performed to obtain a Montecarlo sample; the mean
+            of the sample and the computed uncertainty (variance if regression, entropy if classification)
+        """
+        dropout_sample = [self.forward(x) for _ in range(self.num_mcdropout_iterations)]
+        mean = torch.mean(torch.stack(dropout_sample), dim=0)
+        if self.task_type == "regression":
+            uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
+        elif self.task_type == "classification":
+            uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
+        else:
+            raise ValueError(
+                f"Task type {self.task_type} not supported. Supported types are: regression, classification. Found {self.task_type}."
+            )
+
+        return dropout_sample, mean, uncertainty
+
+
+def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_prob):
+
+    print('Training the model...')
+    accelerator = Accelerator()
+
     # Define the loss function based on the task type
-    if model.output_activation == nn.Sigmoid():
+    if model.task_type == "regression":
         loss_function = F.binary_cross_entropy
-    elif model.output_activation == nn.Softmax(dim=1):
+    elif model.task_type == "classification":
         loss_function = F.cross_entropy
     else:
-        raise ValueError("Invalid output activation function")
-    
-    # Define the optimizer
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    
+        raise ValueError(
+            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
+        )
+
     # Perform k-fold cross validation
     kf = KFold(n_splits=num_folds)
     fold = 1
-    for train_index, val_index in kf.split(x):
-        print(f"Training on fold {fold}")
+    for train_index, val_index in tqdm(kf.split(x), desc="Folds", colour="magenta"):
         fold += 1
-        
+
         # Split the data into training and validation sets
         x_train, x_val = x[train_index], x[val_index]
         y_train, y_val = y[train_index], y[val_index]
-        
+
         # Convert the data to tensors
         x_train = torch.tensor(x_train, dtype=torch.float32)
         y_train = torch.tensor(y_train, dtype=torch.float32)
         x_val = torch.tensor(x_val, dtype=torch.float32)
         y_val = torch.tensor(y_val, dtype=torch.float32)
-        
+
+        # Define the train and validation dataloaders
+        train_dataset = torch.utils.data.TensorDataset(x_train, y_train)
+        val_dataset = torch.utils.data.TensorDataset(x_val, y_val)
+
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True
+        )
+        val_dataloader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False
+        )
+
+        num_samples = len(x_train)
+        reg = (
+            length_scale**2 * (1 - dropout_rate) / (2.0 * num_samples * model_precision)
+        )
+        # Define the optimizer
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=reg)
+
+        model, optimizer, train_dataloader, val_dataloader = accelerator.prepare(
+            model, optimizer, train_dataloader, val_dataloader
+        )
+
+        # Since we are using MCDropout, we want the model to always be in training mode
+        model.train()
         # Train the model for the specified number of epochs
-        for epoch in range(num_epochs):
-            model.train()
-            optimizer.zero_grad()
-            
-            # Perform Monte Carlo Dropout during training
-            model.train_mc_dropout(mc_dropout_prob)
-            
-            # Forward pass
-            y_pred = model(x_train)
-            
-            # Calculate the loss
-            loss = loss_function(y_pred, y_train)
-            
-            # Backward pass
-            loss.backward()
-            optimizer.step()
-            
-            # Evaluate the model on the validation set
-            model.eval()
-            with torch.no_grad():
-                # Perform Monte Carlo Dropout during evaluation
-                model.eval_mc_dropout(mc_dropout_prob)
-                
+        for epoch in tqdm(range(num_epochs), desc="Epochs", colour="green"):
+
+            train_loss = 0
+            for x_train, y_train in tqdm(
+                train_dataloader, desc="Training Batches", colour="yellow", leave=False
+            ):
+
+                optimizer.zero_grad()
+
                 # Forward pass
-                y_val_pred = model(x_val)
-                
-                # Calculate the validation loss
-                val_loss = loss_function(y_val_pred, y_val)
-                
+                y_pred = model(x_train)
+
+                # Calculate the loss
+                loss = loss_function(y_pred, y_train)
+
+                # Backward pass
+                accelerator.backward(loss)
+                optimizer.step()
+
+                train_loss += loss.data.item()
+
+            # Evaluate the model on the validation set
+            # model.eval()
+            with torch.no_grad():
+                total_val_loss = 0
+                val_accuracy = 0
+                val_uncertainties = []
+                # validate over the validation set
+                for x_val, y_val in tqdm(
+                    val_dataloader, desc="Validation Batches", colour="blue", leave=False
+                ):
+                    # Perform Monte Carlo Dropout during evaluation
+                    (
+                        y_val_pred_all_samples,
+                        y_val_pred_mean,
+                        y_val_pred_uncertainty,
+                    ) = model.eval_mc_dropout(x_val)
+
+                    # Calculate the validation loss
+                    val_loss = loss_function(y_val_pred_mean, y_val)
+                    val_uncertainties.append(y_val_pred_uncertainty)
+                    val_accuracy += torch.sum(
+                        torch.argmax(y_val_pred_mean, dim=1) == torch.argmax(y_val, dim=1)
+                    ).data.item()
+
+                    total_val_loss += val_loss.data.item()
+
+                # convert the list of uncertainties to a tensor. consider that the tensors might have different shape
+                val_uncertainties = torch.cat(val_uncertainties)
+                mean_val_uncertainty = torch.mean(val_uncertainties)
                 # Print the training and validation loss for each epoch
-                print(f"Epoch {epoch+1}/{num_epochs} - Training Loss: {loss.item()} - Validation Loss: {val_loss.item()}")
+                print(
+                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()} — Validation Loss: {val_loss.item()} — Mean Validation Uncertainty: {mean_val_uncertainty} — Validation Accuracy: {val_accuracy/len(y_val)}"
+                )
+
 
 # Update the main function
 def main():
+    print(f'Training on dataset {task_num} from the OpenML-CC18 benchmark suite')
     x, y, name, task_type, output_size = get_dataset()
+    print(f"Dataset: {name}")
 
     # Define the model
     input_size = x.shape[1]
-    num_layers = int(input("Enter the number of layers: "))
-    
-    model = MLP(input_size, 
-                num_layers, 
-                hidden_activation_type=hidden_activation_type, 
-                output_type=task_type, 
-                output_size=output_size)
 
+    model = MLP(
+        input_size,
+        num_layers,
+        hidden_activation_type=hidden_activation_type,
+        output_type=task_type,
+        output_size=output_size,
+        num_mcdropout_iterations=num_mcdropout_iterations,
+        dropout_rate=dropout_rate,
+    )
+    print(f"Model created successfully. Model architecture: {model}")
 
+    train(
+        model,
+        x,
+        y,
+        num_folds=num_crossval_folds,
+        num_epochs=num_epochs,
+        learning_rate=learning_rate,
+        mc_dropout_prob=dropout_rate,
+    )
 
 
 if __name__ == "__main__":
