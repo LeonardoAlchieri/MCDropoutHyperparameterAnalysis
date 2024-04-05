@@ -25,20 +25,23 @@ from accelerate import Accelerator
 
 # FIXED PARAMETERS
 hidden_activation_type: str = "relu"
-batch_size: int = 128
+batch_size: int = 32
 length_scale: float = (
-    0  # defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
+    0.1  # defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
 )
-learning_rate: float = 0.001
-num_epochs: int = 100
+starting_learning_rate: float = 0.0001
+learning_rate_decay: float = 0.7
+learning_rate_epoch_rate: int = 2
+num_epochs: int = 50
 num_crossval_folds: int = 3
+prediction_threshold: float = 0.5  # threshold for binary classification
 
 # HYPERPARAMETERS TO INVESTIGATE
-task_num: int = 0  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
-dropout_rate: float = 0.001
-model_precision: float = 0.2  # also known as "tau". Defines the L2 regularization term
+task_num: int = 1  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
+dropout_rate: float = 0.3
+model_precision: float = 0.9  # also known as "tau". Defines the L2 regularization term
 num_mcdropout_iterations: int = 10
-num_layers: int = 4
+num_layers: int = 3
 
 
 # Convert the class labels to one-hot encoded vectors
@@ -132,7 +135,7 @@ class MLP(nn.Module):
             self.task_type = "regression"
         elif output_type == "binary classification":
             self.output_activation = nn.Sigmoid()
-            self.task_type = "classification"
+            self.task_type = "binary classification"
         elif output_type == "multiclass classification":
             self.output_activation = nn.Softmax(dim=1)
             self.task_type = "classification"
@@ -192,7 +195,7 @@ class MLP(nn.Module):
         mean = torch.mean(torch.stack(dropout_sample), dim=0)
         if self.task_type == "regression":
             uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
-        elif self.task_type == "classification":
+        elif self.task_type == "classification" or self.task_type == "binary classification":
             uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
         else:
             raise ValueError(
@@ -208,10 +211,14 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
     accelerator = Accelerator()
 
     # Define the loss function based on the task type
-    if model.task_type == "regression":
+    if model.task_type == "binary classification":
         loss_function = F.binary_cross_entropy
     elif model.task_type == "classification":
         loss_function = F.cross_entropy
+    elif model.task_type == "regression":
+        raise NotImplementedError(
+            "Regression task type not implemented yet. Please implement the loss function for regression."
+        )
     else:
         raise ValueError(
             f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
@@ -241,7 +248,7 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
             train_dataset, batch_size=batch_size, shuffle=True
         )
         val_dataloader = torch.utils.data.DataLoader(
-            val_dataset, batch_size=batch_size, shuffle=False
+            val_dataset, batch_size=batch_size, shuffle=True
         )
 
         num_samples = len(x_train)
@@ -261,6 +268,11 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
         for epoch in tqdm(range(num_epochs), desc="Epochs", colour="green"):
 
             train_loss = 0
+            if epoch % learning_rate_epoch_rate == 0:
+                # lower the learning rate every 3 epochs
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] *= learning_rate_decay
+                
             for x_train, y_train in tqdm(
                 train_dataloader, desc="Training Batches", colour="yellow", leave=False
             ):
@@ -299,9 +311,22 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
-                    val_accuracy += torch.sum(
+                    if model.task_type == "binary classification":
+                        val_accuracy += torch.sum(
+                            (y_val_pred_mean > prediction_threshold).int() == y_val
+                        )
+                    elif model.task_type == "classification":
+                        val_accuracy += torch.sum(
                         torch.argmax(y_val_pred_mean, dim=1) == torch.argmax(y_val, dim=1)
-                    ).data.item()
+                    )
+                    elif model.task_type == "regression":
+                        raise NotImplementedError(
+                            "Regression task type not implemented yet. Please implement the loss function for regression."
+                        )
+                    else:
+                        raise ValueError(
+                            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
+                        )
 
                     total_val_loss += val_loss.data.item()
 
@@ -310,7 +335,7 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                 mean_val_uncertainty = torch.mean(val_uncertainties)
                 # Print the training and validation loss for each epoch
                 print(
-                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()} — Validation Loss: {val_loss.item()} — Mean Validation Uncertainty: {mean_val_uncertainty} — Validation Accuracy: {val_accuracy/len(y_val)}"
+                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()} — Validation Loss: {val_loss.item()} — Mean Validation Uncertainty: {mean_val_uncertainty} — Validation Accuracy: {val_accuracy/len(val_dataset)}"
                 )
 
 
@@ -340,7 +365,7 @@ def main():
         y,
         num_folds=num_crossval_folds,
         num_epochs=num_epochs,
-        learning_rate=learning_rate,
+        learning_rate=starting_learning_rate,
         mc_dropout_prob=dropout_rate,
     )
 
