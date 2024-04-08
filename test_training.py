@@ -5,6 +5,7 @@
     to be run over for the purpose of our experiments.
 """
 
+from pyexpat import model
 import random
 
 import numpy as np
@@ -23,6 +24,13 @@ from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
 from tqdm.auto import tqdm
 from gc import collect as pick_up_trash
+import itertools
+from joblib import Parallel, delayed
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--n_jobs", type=int, default=1, help="Number of parallel jobs for cpu")
+args = parser.parse_args()
 
 # FIXED PARAMETERS
 hidden_activation_type: str = "relu"
@@ -39,11 +47,18 @@ prediction_threshold: float = 0.5  # threshold for binary classification
 random_seed: int = 42
 
 # HYPERPARAMETERS TO INVESTIGATE
-task_num: int = 0  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
-dropout_rate: float = 0.3
-model_precision: float = 0.9  # also known as "tau". Defines the L2 regularization term
-num_mcdropout_iterations: int = 10
-num_layers: int = 3
+task_num_s: int = list(
+    range(20)
+)  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
+dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
+model_precision_s: float = [
+    0.001,
+    0.05,
+    0.5,
+    0.9,
+]  # also known as "tau". Defines the L2 regularization term
+num_mcdropout_iterations_s: int = [3, 5, 10, 20]
+num_layers_s: int = [3, 5, 10]
 
 
 # set reproduction seeds
@@ -79,7 +94,7 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     return class_array_one_hot
 
 
-def get_dataset() -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
+def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
     cc18_suite = openml.study.get_suite(99)
     tasks = cc18_suite.tasks
@@ -186,10 +201,12 @@ class MLP(nn.Module):
         x = self.output_activation(x)
         return x
 
+
 def nanvar(tensor, dim=None, keepdim=False):
     tensor_mean = tensor.nanmean(dim=dim, keepdim=True)
     output = (tensor - tensor_mean).square().nanmean(dim=dim, keepdim=keepdim)
     return output
+
 
 def eval_mc_dropout(
     model: MLP,
@@ -225,14 +242,16 @@ def eval_mc_dropout(
     return dropout_sample, mean, uncertainty
 
 
-
 def train(
     x: torch.Tensor,
     y: torch.Tensor,
     num_folds: int,
     num_epochs: int,
     learning_rate: int,
+    dropout_rate: float,
+    model_precision: float,
     model_args: dict,
+    task_num: int,
 ) -> list[dict]:
 
     print("Training the model...")
@@ -354,7 +373,7 @@ def train(
                     ) = eval_mc_dropout(
                         model=model,
                         x=x_val,
-                        num_mcdropout_iterations=num_mcdropout_iterations,
+                        num_mcdropout_iterations=model_args["num_mcdropout_iterations"],
                         task_type=task_type,
                     )
 
@@ -400,8 +419,10 @@ def train(
                             "dataset_openml_id": task_num,
                             "dropout_rate": dropout_rate,
                             "model_precision": model_precision,
-                            "num_mcdropout_iterations": num_mcdropout_iterations,
-                            "num_layers": num_layers,
+                            "num_mcdropout_iterations": model_args[
+                                "num_mcdropout_iterations"
+                            ],
+                            "num_layers": model_args["num_layers"],
                         },
                         # "optimizer_state": optimizer.state_dict(),
                         "epoch": epoch,
@@ -410,6 +431,7 @@ def train(
                         "mean_val_uncertainty": mean_val_uncertainty.item(),
                         "train_loss": train_loss,
                         "cross_val_fold": fold,
+                        "random_seed": random_seed,
                     }
 
         best_model_infos.append(best_model_info)
@@ -419,21 +441,22 @@ def train(
     return best_model_infos
 
 
-# Update the main function
-def main():
+def parallelizible_single_train(task_num: int, dropout_rate: float, model_precision: float, num_mcdropout_iterations: int, num_layers: int):
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
-    x, y, name, task_type, output_size = get_dataset()
+    x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     print(f"Dataset: {name}")
 
     # Define the model
     input_size = x.shape[1]
-
     best_model_infos = train(
         x,
         y,
         num_folds=num_crossval_folds,
         num_epochs=num_epochs,
         learning_rate=starting_learning_rate,
+        dropout_rate=dropout_rate,
+        model_precision=model_precision,
+        task_num=task_num,
         model_args=dict(
             input_size=input_size,
             num_layers=num_layers,
@@ -445,10 +468,37 @@ def main():
         ),
     )
 
+    output_filename: str = (
+        f"task{task_num}_dropout_rate{dropout_rate}_model_precision{model_precision}_num_mcdropout_iterations{num_mcdropout_iterations}_num_layers{num_layers}.pth"
+    )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
-    torch.save(best_model_infos, "results/test_trainin.pth")
+    torch.save(best_model_infos, f"results/{output_filename}")
 
+# Update the main function
+def main():
+    Parallel(n_jobs=args.n_jobs)(
+        delayed(parallelizible_single_train)(
+            task_num,
+            dropout_rate,
+            model_precision,
+            num_mcdropout_iterations,
+            num_layers,
+        )
+        for (
+            task_num,
+            dropout_rate,
+            model_precision,
+            num_mcdropout_iterations,
+            num_layers,
+        ) in itertools.product(
+            task_num_s,
+            dropout_rate_s,
+            model_precision_s,
+            num_mcdropout_iterations_s,
+            num_layers_s,
+        )
+    )
 
 if __name__ == "__main__":
     main()
