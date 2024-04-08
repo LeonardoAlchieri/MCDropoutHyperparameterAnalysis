@@ -186,8 +186,12 @@ class MLP(nn.Module):
         x = self.output_activation(x)
         return x
 
+
 def eval_mc_dropout(
-    model: MLP, x: torch.Tensor
+    model: MLP,
+    x: torch.Tensor,
+    num_mcdropout_iterations: int,
+    task_type: str,
 ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
     """This method runs the MCDropout at validation time. It returns a list of predictions
 
@@ -203,18 +207,15 @@ def eval_mc_dropout(
         for the num_mcdropout_iterations performed to obtain a Montecarlo sample; the mean
         of the sample and the computed uncertainty (variance if regression, entropy if classification)
     """
-    dropout_sample = [model.forward(x) for _ in range(model.num_mcdropout_iterations)]
+    dropout_sample = [model(x) for _ in range(num_mcdropout_iterations)]
     mean = torch.mean(torch.stack(dropout_sample), dim=0)
-    if model.task_type == "regression":
+    if task_type == "regression":
         uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
-    elif (
-        model.task_type == "classification"
-        or model.task_type == "binary classification"
-    ):
+    elif task_type == "classification" or task_type == "binary classification":
         uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
     else:
         raise ValueError(
-            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {self.task_type}."
+            f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
         )
 
     return dropout_sample, mean, uncertainty
@@ -344,7 +345,12 @@ def train(
                         y_val_pred_all_samples,
                         y_val_pred_mean,
                         y_val_pred_uncertainty,
-                    ) = eval_mc_dropout(model,x_val)
+                    ) = eval_mc_dropout(
+                        model=model,
+                        x=x_val,
+                        num_mcdropout_iterations=num_mcdropout_iterations,
+                        task_type=model.task_type,
+                    )
 
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
