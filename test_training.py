@@ -6,6 +6,8 @@
 """
 
 from pyparsing import col
+import random
+import numpy as np
 from tqdm.auto import tqdm
 import openml
 import pandas as pd
@@ -30,11 +32,12 @@ length_scale: float = (
     0.1  # defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
 )
 starting_learning_rate: float = 0.0001
-learning_rate_decay: float = 0.7
+learning_rate_decay: float = 1
 learning_rate_epoch_rate: int = 2
 num_epochs: int = 50
 num_crossval_folds: int = 3
 prediction_threshold: float = 0.5  # threshold for binary classification
+random_seed: int = 42
 
 # HYPERPARAMETERS TO INVESTIGATE
 task_num: int = 1  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
@@ -42,6 +45,18 @@ dropout_rate: float = 0.3
 model_precision: float = 0.9  # also known as "tau". Defines the L2 regularization term
 num_mcdropout_iterations: int = 10
 num_layers: int = 3
+
+
+# set reproduction seeds
+torch.manual_seed(random_seed)
+torch.cuda.manual_seed(random_seed)
+torch.cuda.manual_seed_all(random_seed)
+
+# set numpy seed
+np.random.seed(random_seed)
+
+# set any other random seed
+random.seed(random_seed)
 
 
 # Convert the class labels to one-hot encoded vectors
@@ -59,7 +74,7 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
         torch.tensor(encoded_labels), num_classes
     )
     if class_array_one_hot.shape[1] == 2:
-        print(f'Binary classification detected. Converting to single vector')
+        print(f"Binary classification detected. Converting to single vector")
         # Convert binary classification to a single vector
         class_array_one_hot = class_array_one_hot[:, 1].unsqueeze(1)
     return class_array_one_hot
@@ -76,11 +91,11 @@ def get_dataset() -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     x = test_dataset[0].drop(columns=[test_task.target_name])
     x = pd.get_dummies(x)
     x = torch.tensor(x.values.astype(float), dtype=torch.float32)
-    
+
     y = test_dataset[0][test_task.target_name].to_numpy()
     name = test_dataset_obj.name
     y = prepare_prediction_array(y)
-    
+
     prediction_type = test_task.task_type
     if prediction_type == "Supervised Classification":
         prediction_type = (
@@ -111,15 +126,13 @@ class MLP(nn.Module):
     ) -> None:
         super(MLP, self).__init__()
 
-        
-
         if hidden_activation_type == "relu":
             self.activation = nn.ReLU()
         else:
             raise ValueError(
                 f"Activation type {hidden_activation_type} not supported. Supported types are: relu."
             )
-            
+
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, 1000))  # First layer
@@ -195,7 +208,10 @@ class MLP(nn.Module):
         mean = torch.mean(torch.stack(dropout_sample), dim=0)
         if self.task_type == "regression":
             uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
-        elif self.task_type == "classification" or self.task_type == "binary classification":
+        elif (
+            self.task_type == "classification"
+            or self.task_type == "binary classification"
+        ):
             uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
         else:
             raise ValueError(
@@ -207,7 +223,7 @@ class MLP(nn.Module):
 
 def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_prob):
 
-    print('Training the model...')
+    print("Training the model...")
     accelerator = Accelerator()
 
     # Define the loss function based on the task type
@@ -272,7 +288,7 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                 # lower the learning rate every 3 epochs
                 for param_group in optimizer.param_groups:
                     param_group["lr"] *= learning_rate_decay
-                
+
             for x_train, y_train in tqdm(
                 train_dataloader, desc="Training Batches", colour="yellow", leave=False
             ):
@@ -299,7 +315,10 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                 val_uncertainties = []
                 # validate over the validation set
                 for x_val, y_val in tqdm(
-                    val_dataloader, desc="Validation Batches", colour="blue", leave=False
+                    val_dataloader,
+                    desc="Validation Batches",
+                    colour="blue",
+                    leave=False,
                 ):
                     # Perform Monte Carlo Dropout during evaluation
                     (
@@ -317,8 +336,9 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                         )
                     elif model.task_type == "classification":
                         val_accuracy += torch.sum(
-                        torch.argmax(y_val_pred_mean, dim=1) == torch.argmax(y_val, dim=1)
-                    )
+                            torch.argmax(y_val_pred_mean, dim=1)
+                            == torch.argmax(y_val, dim=1)
+                        )
                     elif model.task_type == "regression":
                         raise NotImplementedError(
                             "Regression task type not implemented yet. Please implement the loss function for regression."
@@ -341,7 +361,7 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
 
 # Update the main function
 def main():
-    print(f'Training on dataset {task_num} from the OpenML-CC18 benchmark suite')
+    print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset()
     print(f"Dataset: {name}")
 
