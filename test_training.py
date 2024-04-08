@@ -8,6 +8,7 @@
 from pyexpat import model
 import random
 
+import os
 import numpy as np
 import openml
 import pandas as pd
@@ -29,7 +30,9 @@ from joblib import Parallel, delayed
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--n_jobs", type=int, default=1, help="Number of parallel jobs for cpu")
+parser.add_argument(
+    "--n_jobs", type=int, default=1, help="Number of parallel jobs for cpu"
+)
 args = parser.parse_args()
 
 # FIXED PARAMETERS
@@ -45,6 +48,7 @@ num_epochs: int = 50
 num_crossval_folds: int = 3
 prediction_threshold: float = 0.5  # threshold for binary classification
 random_seed: int = 42
+results_path: str = "./results"
 
 # HYPERPARAMETERS TO INVESTIGATE
 task_num_s: int = list(
@@ -441,7 +445,14 @@ def train(
     return best_model_infos
 
 
-def parallelizible_single_train(task_num: int, dropout_rate: float, model_precision: float, num_mcdropout_iterations: int, num_layers: int):
+def parallelizible_single_train(
+    task_num: int,
+    dropout_rate: float,
+    model_precision: float,
+    num_mcdropout_iterations: int,
+    num_layers: int,
+    results_path: str,
+):
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     print(f"Dataset: {name}")
@@ -473,17 +484,42 @@ def parallelizible_single_train(task_num: int, dropout_rate: float, model_precis
     )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
-    torch.save(best_model_infos, f"results/{output_filename}")
+    torch.save(best_model_infos, os.path.join(results_path, output_filename))
+
+
+def get_already_run_experiments(
+    path_to_ressults_folder: str,
+) -> list[tuple[int | float]]:
+    result_files_raw: list[str] = os.listdir(path_to_ressults_folder)
+    # NOTE: example output
+    # task0_dropout_rate0.9_model_precision0.9_num_mcdropout_iterations5_num_layers5.pth
+    return [
+        (
+            int(file.split("_")[0].replace("task", "")),
+            float(file.split("_")[2].replace("rate", "")),
+            float(file.split("_")[4].replace("precision", "")),
+            int(file.split("_")[7].replace("iterations", "")),
+            int(file.split("_")[9].replace("layers", "").replace(".pth", "")),
+        )
+        for file in result_files_raw
+    ]
+
 
 # Update the main function
 def main():
+
+    # TODO: move global variables to config file
+
+    previous_experiments = get_already_run_experiments(results_path)
+
     Parallel(n_jobs=args.n_jobs)(
         delayed(parallelizible_single_train)(
-            task_num,
-            dropout_rate,
-            model_precision,
-            num_mcdropout_iterations,
-            num_layers,
+            task_num=task_num,
+            dropout_rate=dropout_rate,
+            model_precision=model_precision,
+            num_mcdropout_iterations=num_mcdropout_iterations,
+            num_layers=num_layers,
+            results_path=results_path,
         )
         for (
             task_num,
@@ -498,7 +534,15 @@ def main():
             num_mcdropout_iterations_s,
             num_layers_s,
         )
+        if (
+            task_num,
+            dropout_rate,
+            model_precision,
+            num_mcdropout_iterations,
+            num_layers,
+        ) not in previous_experiments
     )
+
 
 if __name__ == "__main__":
     main()
