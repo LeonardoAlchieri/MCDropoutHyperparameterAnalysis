@@ -326,7 +326,7 @@ def train(
         model.train()
 
         best_val_acc: float = (
-            1.0  # NOTE: might consider using the validation loss instead of accuracy — also acc not the best metric!
+            0.  # NOTE: might consider using the validation loss instead of accuracy — also acc not the best metric!
         )
         best_model_info = dict()
         # Train the model for the specified number of epochs
@@ -409,7 +409,7 @@ def train(
                 mean_val_uncertainty = torch.mean(val_uncertainties)
                 val_accuracy = val_accuracy / len(val_dataset)
                 # Print the training and validation loss for each epoch
-                if val_accuracy < best_val_acc:
+                if val_accuracy > best_val_acc:
                     best_model_info = {
                         "model_weights": model.state_dict(),
                         "training_info": {
