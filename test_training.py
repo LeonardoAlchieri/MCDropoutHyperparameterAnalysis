@@ -432,11 +432,19 @@ def train(
                         "random_seed": random_seed,
                     }
                     print(
-                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}\
-                        — Validation Loss: {val_loss.item()}\
-                            — Mean Validation Uncertainty: {mean_val_uncertainty}\
-                                — Validation Accuracy: {val_accuracy}"
-                )
+                        f"""
+                        task{task_num} 
+                        dropout_rate{dropout_rate} 
+                        model_precision{model_precision} 
+                        num_mcdropout_iterations{model_args[
+                                'num_mcdropout_iterations'
+                            ]} 
+                        num_layers{model_args['num_layers']}
+                        Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}
+                        — Validation Loss: {val_loss.item()}
+                        — Mean Validation Uncertainty: {mean_val_uncertainty}
+                        — Validation Accuracy: {val_accuracy}"""
+                    )
 
         best_model_infos.append(best_model_info)
         del model
@@ -540,7 +548,8 @@ def main():
             model_precision,
             num_mcdropout_iterations,
             num_layers,
-        ) not in previous_experiments
+        )
+        not in previous_experiments
     )
 
 
