@@ -186,38 +186,38 @@ class MLP(nn.Module):
         x = self.output_activation(x)
         return x
 
-    def eval_mc_dropout(
-        self, x: torch.Tensor
-    ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
-        """This method runs the MCDropout at validation time. It returns a list of predictions
+def eval_mc_dropout(
+    model: MLP, x: torch.Tensor
+) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
+    """This method runs the MCDropout at validation time. It returns a list of predictions
 
-        Parameters
-        ----------
-        x : torch.Tensor
-            input tensor
+    Parameters
+    ----------
+    x : torch.Tensor
+        input tensor
 
-        Returns
-        -------
-        tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]
-            the output is composed as follow: a list of tensors, containing each predictions
-            for the num_mcdropout_iterations performed to obtain a Montecarlo sample; the mean
-            of the sample and the computed uncertainty (variance if regression, entropy if classification)
-        """
-        dropout_sample = [self.forward(x) for _ in range(self.num_mcdropout_iterations)]
-        mean = torch.mean(torch.stack(dropout_sample), dim=0)
-        if self.task_type == "regression":
-            uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
-        elif (
-            self.task_type == "classification"
-            or self.task_type == "binary classification"
-        ):
-            uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
-        else:
-            raise ValueError(
-                f"Task type {self.task_type} not supported. Supported types are: regression, classification. Found {self.task_type}."
-            )
+    Returns
+    -------
+    tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]
+        the output is composed as follow: a list of tensors, containing each predictions
+        for the num_mcdropout_iterations performed to obtain a Montecarlo sample; the mean
+        of the sample and the computed uncertainty (variance if regression, entropy if classification)
+    """
+    dropout_sample = [model.forward(x) for _ in range(model.num_mcdropout_iterations)]
+    mean = torch.mean(torch.stack(dropout_sample), dim=0)
+    if model.task_type == "regression":
+        uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
+    elif (
+        model.task_type == "classification"
+        or model.task_type == "binary classification"
+    ):
+        uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
+    else:
+        raise ValueError(
+            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {self.task_type}."
+        )
 
-        return dropout_sample, mean, uncertainty
+    return dropout_sample, mean, uncertainty
 
 
 def train(
@@ -344,7 +344,7 @@ def train(
                         y_val_pred_all_samples,
                         y_val_pred_mean,
                         y_val_pred_uncertainty,
-                    ) = model.eval_mc_dropout(x_val)
+                    ) = eval_mc_dropout(model,x_val)
 
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
@@ -384,7 +384,7 @@ def train(
                     best_model_info = {
                         "model_weights": model.state_dict(),
                         "training_info": {
-                            "model": model.__class_.__name__,
+                            "model": model.__class__.__name__,
                             "dataset_openml_id": task_num,
                             "dropout_rate": dropout_rate,
                             "model_precision": model_precision,
