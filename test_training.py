@@ -5,25 +5,26 @@
     to be run over for the purpose of our experiments.
 """
 
-from pyparsing import col
+import json
 import random
+
 import numpy as np
-from tqdm.auto import tqdm
 import openml
 import pandas as pd
-from numpy import ndarray
 import torch
 import torch.nn as nn
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import KFold
-
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
 
 # import dataset and dataloader for pytoarch
 import torch.utils.data
-
 from accelerate import Accelerator
+from numpy import ndarray
+from pyparsing import col
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import LabelEncoder
+from tqdm.auto import tqdm
+from gc import collect as pick_up_trash
 
 # FIXED PARAMETERS
 hidden_activation_type: str = "relu"
@@ -40,7 +41,7 @@ prediction_threshold: float = 0.5  # threshold for binary classification
 random_seed: int = 42
 
 # HYPERPARAMETERS TO INVESTIGATE
-task_num: int = 1  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
+task_num: int = 0  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
 dropout_rate: float = 0.3
 model_precision: float = 0.9  # also known as "tau". Defines the L2 regularization term
 num_mcdropout_iterations: int = 10
@@ -221,30 +222,41 @@ class MLP(nn.Module):
         return dropout_sample, mean, uncertainty
 
 
-def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_prob):
+def train(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    num_folds: int,
+    num_epochs: int,
+    learning_rate: int,
+    model_args: dict,
+) -> list[dict]:
 
     print("Training the model...")
     accelerator = Accelerator()
 
-    # Define the loss function based on the task type
-    if model.task_type == "binary classification":
-        loss_function = F.binary_cross_entropy
-    elif model.task_type == "classification":
-        loss_function = F.cross_entropy
-    elif model.task_type == "regression":
-        raise NotImplementedError(
-            "Regression task type not implemented yet. Please implement the loss function for regression."
-        )
-    else:
-        raise ValueError(
-            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
-        )
-
     # Perform k-fold cross validation
     kf = KFold(n_splits=num_folds)
     fold = 1
+    best_model_infos: list[dict] = []
     for train_index, val_index in tqdm(kf.split(x), desc="Folds", colour="magenta"):
         fold += 1
+
+        # FIXME: I don't like that, in each fold, I am ridefining the model and the loss function. This might accidentaly break
+        model = MLP(**model_args)
+
+        # Define the loss function based on the task type
+        if model.task_type == "binary classification":
+            loss_function = F.binary_cross_entropy
+        elif model.task_type == "classification":
+            loss_function = F.cross_entropy
+        elif model.task_type == "regression":
+            raise NotImplementedError(
+                "Regression task type not implemented yet. Please implement the loss function for regression."
+            )
+        else:
+            raise ValueError(
+                f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
+            )
 
         # Split the data into training and validation sets
         x_train, x_val = x[train_index], x[val_index]
@@ -278,8 +290,17 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
             model, optimizer, train_dataloader, val_dataloader
         )
 
+        # NOTE: I am defining their type  here, since accelerator messes them up
+        model: MLP
+        optimizer: optim.Adam
+
         # Since we are using MCDropout, we want the model to always be in training mode
         model.train()
+
+        best_val_acc: float = (
+            1.0  # NOTE: might consider using the validation loss instead of accuracy — also acc not the best metric!
+        )
+        best_model_info = dict()
         # Train the model for the specified number of epochs
         for epoch in tqdm(range(num_epochs), desc="Epochs", colour="green"):
 
@@ -353,10 +374,39 @@ def train(model: MLP, x, y, num_folds, num_epochs, learning_rate, mc_dropout_pro
                 # convert the list of uncertainties to a tensor. consider that the tensors might have different shape
                 val_uncertainties = torch.cat(val_uncertainties)
                 mean_val_uncertainty = torch.mean(val_uncertainties)
+                val_accuracy = val_accuracy / len(val_dataset)
                 # Print the training and validation loss for each epoch
                 print(
-                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()} — Validation Loss: {val_loss.item()} — Mean Validation Uncertainty: {mean_val_uncertainty} — Validation Accuracy: {val_accuracy/len(val_dataset)}"
+                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}\
+                        — Validation Loss: {val_loss.item()}\
+                            — Mean Validation Uncertainty: {mean_val_uncertainty}\
+                                — Validation Accuracy: {val_accuracy}"
                 )
+                if val_accuracy < best_val_acc:
+                    best_model_info = {
+                        "model_weights": model.state_dict(),
+                        "training_info": {
+                            "model": model.__class_.__name__,
+                            "dataset_openml_id": task_num,
+                            "dropout_rate": dropout_rate,
+                            "model_precision": model_precision,
+                            "num_mcdropout_iterations": num_mcdropout_iterations,
+                            "num_layers": num_layers,
+                        },
+                        # "optimizer_state": optimizer.state_dict(),
+                        "epoch": epoch,
+                        "val_accuracy": val_accuracy,
+                        "val_loss": val_loss.item(),
+                        "mean_val_uncertainty": mean_val_uncertainty.item(),
+                        "train_loss": train_loss,
+                        "cross_val_fold": fold,
+                    }
+
+        best_model_infos.append(best_model_info)
+        del model
+        pick_up_trash()
+
+    return best_model_infos
 
 
 # Update the main function
@@ -368,26 +418,26 @@ def main():
     # Define the model
     input_size = x.shape[1]
 
-    model = MLP(
-        input_size,
-        num_layers,
-        hidden_activation_type=hidden_activation_type,
-        output_type=task_type,
-        output_size=output_size,
-        num_mcdropout_iterations=num_mcdropout_iterations,
-        dropout_rate=dropout_rate,
-    )
-    print(f"Model created successfully. Model architecture: {model}")
-
-    train(
-        model,
+    best_model_infos = train(
         x,
         y,
         num_folds=num_crossval_folds,
         num_epochs=num_epochs,
         learning_rate=starting_learning_rate,
-        mc_dropout_prob=dropout_rate,
+        model_args=dict(
+            input_size=input_size,
+            num_layers=num_layers,
+            hidden_activation_type=hidden_activation_type,
+            output_type=task_type,
+            output_size=output_size,
+            num_mcdropout_iterations=num_mcdropout_iterations,
+            dropout_rate=dropout_rate,
+        ),
     )
+
+    # save list of dicts to json
+    # TODO: find a better schema. Probably not a good idea to save everything at the end.
+    torch.save(best_model_infos, "results/test_trainin.pth")
 
 
 if __name__ == "__main__":
