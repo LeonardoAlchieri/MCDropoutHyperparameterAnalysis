@@ -409,12 +409,6 @@ def train(
                 mean_val_uncertainty = torch.mean(val_uncertainties)
                 val_accuracy = val_accuracy / len(val_dataset)
                 # Print the training and validation loss for each epoch
-                print(
-                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}\
-                        — Validation Loss: {val_loss.item()}\
-                            — Mean Validation Uncertainty: {mean_val_uncertainty}\
-                                — Validation Accuracy: {val_accuracy}"
-                )
                 if val_accuracy < best_val_acc:
                     best_model_info = {
                         "model_weights": model.state_dict(),
@@ -437,6 +431,12 @@ def train(
                         "cross_val_fold": fold,
                         "random_seed": random_seed,
                     }
+                    print(
+                    f"Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}\
+                        — Validation Loss: {val_loss.item()}\
+                            — Mean Validation Uncertainty: {mean_val_uncertainty}\
+                                — Validation Accuracy: {val_accuracy}"
+                )
 
         best_model_infos.append(best_model_info)
         del model
