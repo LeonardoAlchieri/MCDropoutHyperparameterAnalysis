@@ -186,6 +186,10 @@ class MLP(nn.Module):
         x = self.output_activation(x)
         return x
 
+def nanvar(tensor, dim=None, keepdim=False):
+    tensor_mean = tensor.nanmean(dim=dim, keepdim=True)
+    output = (tensor - tensor_mean).square().nanmean(dim=dim, keepdim=keepdim)
+    return output
 
 def eval_mc_dropout(
     model: MLP,
@@ -208,17 +212,18 @@ def eval_mc_dropout(
         of the sample and the computed uncertainty (variance if regression, entropy if classification)
     """
     dropout_sample = [model(x) for _ in range(num_mcdropout_iterations)]
-    mean = torch.mean(torch.stack(dropout_sample), dim=0)
+    mean = torch.nanmean(torch.stack(dropout_sample), dim=0)
     if task_type == "regression":
-        uncertainty = torch.var(torch.stack(dropout_sample), dim=0)
+        uncertainty = nanvar(torch.stack(dropout_sample), dim=0)
     elif task_type == "classification" or task_type == "binary classification":
-        uncertainty = -torch.sum(mean * torch.log(mean), dim=1)
+        uncertainty = -torch.nansum(mean * torch.log(mean), dim=1)
     else:
         raise ValueError(
             f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
         )
 
     return dropout_sample, mean, uncertainty
+
 
 
 def train(
