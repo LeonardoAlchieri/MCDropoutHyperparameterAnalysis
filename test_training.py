@@ -242,19 +242,20 @@ def train(
 
         # FIXME: I don't like that, in each fold, I am ridefining the model and the loss function. This might accidentaly break
         model = MLP(**model_args)
+        task_type = model.task_type
 
         # Define the loss function based on the task type
-        if model.task_type == "binary classification":
+        if task_type == "binary classification":
             loss_function = F.binary_cross_entropy
-        elif model.task_type == "classification":
+        elif task_type == "classification":
             loss_function = F.cross_entropy
-        elif model.task_type == "regression":
+        elif task_type == "regression":
             raise NotImplementedError(
                 "Regression task type not implemented yet. Please implement the loss function for regression."
             )
         else:
             raise ValueError(
-                f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
+                f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
             )
 
         # Split the data into training and validation sets
@@ -349,28 +350,28 @@ def train(
                         model=model,
                         x=x_val,
                         num_mcdropout_iterations=num_mcdropout_iterations,
-                        task_type=model.task_type,
+                        task_type=task_type,
                     )
 
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
-                    if model.task_type == "binary classification":
+                    if task_type == "binary classification":
                         val_accuracy += torch.sum(
                             (y_val_pred_mean > prediction_threshold).int() == y_val
                         )
-                    elif model.task_type == "classification":
+                    elif task_type == "classification":
                         val_accuracy += torch.sum(
                             torch.argmax(y_val_pred_mean, dim=1)
                             == torch.argmax(y_val, dim=1)
                         )
-                    elif model.task_type == "regression":
+                    elif task_type == "regression":
                         raise NotImplementedError(
                             "Regression task type not implemented yet. Please implement the loss function for regression."
                         )
                     else:
                         raise ValueError(
-                            f"Task type {model.task_type} not supported. Supported types are: regression, classification. Found {model.task_type}."
+                            f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
                         )
 
                     total_val_loss += val_loss.data.item()
