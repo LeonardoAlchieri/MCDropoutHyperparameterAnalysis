@@ -1,0 +1,1 @@
+mamba create -n acc pytorch torchvision torchaudio pytorch-cuda=12.1 openml pandas pyarrow fastparquet accelerate tqdm scikit-learn numpy -c pytorch -c nvidia -c conda-forge
