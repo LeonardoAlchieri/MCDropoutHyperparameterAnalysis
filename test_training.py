@@ -5,7 +5,6 @@
     to be run over for the purpose of our experiments.
 """
 
-from pyexpat import model
 import random
 
 import os
@@ -52,7 +51,7 @@ results_path: str = "./results"
 
 # HYPERPARAMETERS TO INVESTIGATE
 task_num_s: int = list(
-    range(20)
+    range(30, 50)
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
 dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
 model_precision_s: float = [
@@ -384,6 +383,7 @@ def train(
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
+                    # TODO: add f1 score and other metrics
                     if task_type == "binary classification":
                         val_accuracy += torch.sum(
                             (y_val_pred_mean > prediction_threshold).int() == y_val
