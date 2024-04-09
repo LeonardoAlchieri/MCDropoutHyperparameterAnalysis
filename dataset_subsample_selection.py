@@ -5,7 +5,7 @@ import openml
 import pandas as pd
 from tqdm.auto import tqdm
 
-random_seed: int = 42
+random_seed: int = 99
 
 n_subsample: int = 20
 
