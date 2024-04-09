@@ -44,7 +44,7 @@ results_path: str = "./results"
 
 # HYPERPARAMETERS TO INVESTIGATE
 task_num_s: int = list(
-    range(30, 50)
+    range(4, 9)
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
 dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
 model_precision_s: float = [
@@ -345,8 +345,14 @@ def train(
                 # Backward pass
                 accelerator.backward(loss)
                 optimizer.step()
-
-                train_loss += loss.data.item()
+                try:
+                    train_loss += loss.data.item()
+                except RuntimeError as e:
+                    print(e)
+                    print(train_loss)
+                    print(loss.data)
+                    print(loss.data.item())
+                    raise e
 
             # Evaluate the model on the validation set
             # model.eval()
