@@ -426,6 +426,7 @@ def train(
                     val_f1 = f1_score(
                         y_val.cpu().numpy(),
                         (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
+                        average="binary" if task_type == "binary classification" else "macro",
                     )
                     val_mcc = matthews_corrcoef(
                         y_val.cpu().numpy(),
