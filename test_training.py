@@ -331,7 +331,7 @@ def train(
                     param_group["lr"] *= learning_rate_decay
 
             for x_train, y_train in tqdm(
-                train_dataloader, desc="Training Batches", colour="yellow", leave=False
+                train_dataloader, desc="Training Batches", colour="yellow", leave=False, disable=True,
             ):
 
                 optimizer.zero_grad()
@@ -360,6 +360,7 @@ def train(
                     desc="Validation Batches",
                     colour="blue",
                     leave=False,
+                    disable=True,
                 ):
                     # Perform Monte Carlo Dropout during evaluation
                     (
