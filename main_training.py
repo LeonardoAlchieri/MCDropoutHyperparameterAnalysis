@@ -168,7 +168,7 @@ class MLP(nn.Module):
         self.layers.append(
             nn.Sequential(
                 nn.Linear(input_size, layer_size),
-                nn.BatchNorm1d(layer_size),
+                # nn.BatchNorm1d(layer_size),
                 self.activation,
                 nn.Dropout(dropout_rate),
             )
@@ -177,7 +177,7 @@ class MLP(nn.Module):
             self.layers.append(
                 nn.Sequential(
                     nn.Linear(layer_size, layer_size),
-                    nn.BatchNorm1d(layer_size),
+                    # nn.BatchNorm1d(layer_size),
                     self.activation,
                     nn.Dropout(dropout_rate),
                 )
