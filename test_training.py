@@ -344,8 +344,9 @@ def train(
                     loss = loss_function(y_pred, y_train)
                 except Exception as e:
                     print(f"Error: {e}")
-                    print(f"y_pred: {y_pred}")
-                    print(f"y_train: {y_train}")
+                    print(model)
+                    # print(f"y_pred: {y_pred}")
+                    # print(f"y_train: {y_train}")
                     raise e
 
                 # Backward pass
