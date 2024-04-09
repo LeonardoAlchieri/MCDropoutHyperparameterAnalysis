@@ -25,14 +25,7 @@ from sklearn.preprocessing import LabelEncoder
 from tqdm.auto import tqdm
 from gc import collect as pick_up_trash
 import itertools
-from joblib import Parallel, delayed
 import argparse
-
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--n_jobs", type=int, default=1, help="Number of parallel jobs for cpu"
-)
-args = parser.parse_args()
 
 # FIXED PARAMETERS
 hidden_activation_type: str = "relu"
@@ -325,7 +318,7 @@ def train(
         model.train()
 
         best_val_acc: float = (
-            0.  # NOTE: might consider using the validation loss instead of accuracy — also acc not the best metric!
+            0.0  # NOTE: might consider using the validation loss instead of accuracy — also acc not the best metric!
         )
         best_model_info = dict()
         # Train the model for the specified number of epochs
@@ -460,7 +453,7 @@ def parallelizible_single_train(
     num_mcdropout_iterations: int,
     num_layers: int,
     results_path: str,
-):
+) -> None:
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     print(f"Dataset: {name}")
@@ -520,37 +513,36 @@ def main():
 
     previous_experiments = get_already_run_experiments(results_path)
 
-    Parallel(n_jobs=args.n_jobs)(
-        delayed(parallelizible_single_train)(
-            task_num=task_num,
-            dropout_rate=dropout_rate,
-            model_precision=model_precision,
-            num_mcdropout_iterations=num_mcdropout_iterations,
-            num_layers=num_layers,
-            results_path=results_path,
-        )
-        for (
-            task_num,
-            dropout_rate,
-            model_precision,
-            num_mcdropout_iterations,
-            num_layers,
-        ) in itertools.product(
-            task_num_s,
-            dropout_rate_s,
-            model_precision_s,
-            num_mcdropout_iterations_s,
-            num_layers_s,
-        )
+    for (
+        task_num,
+        dropout_rate,
+        model_precision,
+        num_mcdropout_iterations,
+        num_layers,
+    ) in itertools.product(
+        task_num_s,
+        dropout_rate_s,
+        model_precision_s,
+        num_mcdropout_iterations_s,
+        num_layers_s,
+    ):
         if (
             task_num,
             dropout_rate,
             model_precision,
             num_mcdropout_iterations,
             num_layers,
-        )
-        not in previous_experiments
-    )
+        ) not in previous_experiments:
+            parallelizible_single_train(
+                task_num=task_num,
+                dropout_rate=dropout_rate,
+                model_precision=model_precision,
+                num_mcdropout_iterations=num_mcdropout_iterations,
+                num_layers=num_layers,
+                results_path=results_path,
+            )
+        else:
+            continue
 
 
 if __name__ == "__main__":
