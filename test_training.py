@@ -331,7 +331,11 @@ def train(
                     param_group["lr"] *= learning_rate_decay
 
             for x_train, y_train in tqdm(
-                train_dataloader, desc="Training Batches", colour="yellow", leave=False, disable=True,
+                train_dataloader,
+                desc="Training Batches",
+                colour="yellow",
+                leave=False,
+                disable=True,
             ):
 
                 optimizer.zero_grad()
@@ -339,22 +343,14 @@ def train(
                 # Forward pass
                 y_pred = model(x_train)
 
-                try:
-                    # Calculate the loss
-                    loss = loss_function(y_pred, y_train)
-                except Exception as e:
-                    print(f"Error: {e}")
-                    print(model)
-                    # print(f"y_pred: {y_pred}")
-                    print(f"y_train: {y_train}")
-                    raise e
+                # Calculate the loss
+                loss = loss_function(y_pred, y_train)
 
                 # Backward pass
                 accelerator.backward(loss)
                 optimizer.step()
-                
+
                 train_loss += loss.data.item()
-                
 
             # Evaluate the model on the validation set
             # model.eval()
@@ -528,13 +524,17 @@ def main():
         model_precision,
         num_mcdropout_iterations,
         num_layers,
-    ) in tqdm(itertools.product(
-        task_num_s,
-        dropout_rate_s,
-        model_precision_s,
-        num_mcdropout_iterations_s,
-        num_layers_s,
-    ), desc="Experiments", colour="red"):
+    ) in tqdm(
+        itertools.product(
+            task_num_s,
+            dropout_rate_s,
+            model_precision_s,
+            num_mcdropout_iterations_s,
+            num_layers_s,
+        ),
+        desc="Experiments",
+        colour="red",
+    ):
         if (
             task_num,
             dropout_rate,
@@ -542,14 +542,26 @@ def main():
             num_mcdropout_iterations,
             num_layers,
         ) not in previous_experiments:
-            parallelizible_single_train(
-                task_num=task_num,
-                dropout_rate=dropout_rate,
-                model_precision=model_precision,
-                num_mcdropout_iterations=num_mcdropout_iterations,
-                num_layers=num_layers,
-                results_path=results_path,
-            )
+            try:
+                parallelizible_single_train(
+                    task_num=task_num,
+                    dropout_rate=dropout_rate,
+                    model_precision=model_precision,
+                    num_mcdropout_iterations=num_mcdropout_iterations,
+                    num_layers=num_layers,
+                    results_path=results_path,
+                )
+            except RuntimeError as e:
+                print(f"CODE CRUSHED DUE TO THE FOLLOWING REASON: {e}")
+                current_combination = dict(
+                    task_num=task_num,
+                    dropout_rate=dropout_rate,
+                    model_precision=model_precision,
+                    num_mcdropout_iterations=num_mcdropout_iterations,
+                    num_layers=num_layers,
+                )
+                print(f"SKIPPING CURRENT COMBINATION: {current_combination}")
+                continue
         else:
             continue
 
