@@ -111,9 +111,7 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
 
 def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
-    cc18_suite = openml.study.get_suite(99)
-    tasks = cc18_suite.tasks
-    test_task = openml.tasks.get_task(tasks[task_num])
+    test_task = openml.tasks.get_task(task_num)
     test_dataset_obj = test_task.get_dataset()
     test_dataset = test_dataset_obj.get_data()
 
