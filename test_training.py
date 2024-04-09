@@ -519,13 +519,13 @@ def main():
         model_precision,
         num_mcdropout_iterations,
         num_layers,
-    ) in itertools.product(
+    ) in tqdm(itertools.product(
         task_num_s,
         dropout_rate_s,
         model_precision_s,
         num_mcdropout_iterations_s,
         num_layers_s,
-    ):
+    ), desc="Experiments", colour="red"):
         if (
             task_num,
             dropout_rate,
