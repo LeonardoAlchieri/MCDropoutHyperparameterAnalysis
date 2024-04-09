@@ -377,6 +377,8 @@ def train(
                 # Forward pass
                 y_pred = model(x_train)
 
+                print(y_pred)
+                print(y_train)
                 # Calculate the loss
                 loss = loss_function(y_pred, y_train)
 
