@@ -165,23 +165,15 @@ class MLP(nn.Module):
 
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
-        self.layers.append(
-            nn.Sequential(
-                nn.Linear(input_size, layer_size),
-                # nn.BatchNorm1d(layer_size),
-                self.activation,
-                nn.Dropout(dropout_rate),
-            )
-        )
+        self.layers.append(nn.Linear(input_size, 1000))  # First layer
+        self.layers.append(nn.BatchNorm1d(1000))
+        self.layers.append(self.activation)
+        self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
         for _ in range(num_layers - 1):
-            self.layers.append(
-                nn.Sequential(
-                    nn.Linear(layer_size, layer_size),
-                    # nn.BatchNorm1d(layer_size),
-                    self.activation,
-                    nn.Dropout(dropout_rate),
-                )
-            )
+            self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
+            self.layers.append(nn.BatchNorm1d(1000))
+            self.layers.append(self.activation)
+            self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
 
         self.output_layer = nn.Linear(layer_size, output_size)
 
@@ -201,10 +193,6 @@ class MLP(nn.Module):
             raise ValueError(
                 f"Output type {output_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
             )
-
-        self.output_operations = nn.Sequential(
-            self.output_layer, self.output_activation
-        )
 
         if num_mcdropout_iterations > 1:
             self.num_mcdropout_iterations = num_mcdropout_iterations
@@ -230,7 +218,8 @@ class MLP(nn.Module):
             x = self.activation(layer(x))
             print(x)
 
-        x = self.output_operations(x)
+        x = self.output_layer(x)
+        x = self.output_activation(x)
         print(x)
         return x
 
