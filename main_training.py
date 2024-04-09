@@ -53,9 +53,9 @@ batch_size: int = 32
 length_scale: float = (
     0.1  # defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
 )
-starting_learning_rate: float = 0.0001
-learning_rate_decay: float = 1
-learning_rate_epoch_rate: int = 2
+starting_learning_rate: float = 0.01
+learning_rate_decay: float = 0.5
+learning_rate_epoch_rate: int = 5
 num_epochs: int = 50
 num_crossval_folds: int = 3
 prediction_threshold: float = 0.5  # threshold for binary classification
