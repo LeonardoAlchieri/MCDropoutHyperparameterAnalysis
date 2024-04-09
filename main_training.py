@@ -317,10 +317,10 @@ def train(
         y_train, y_val = y[train_index], y[val_index]
 
         # # Convert the data to tensors
-        # x_train = torch.tensor(x_train, dtype=torch.float32)
-        # y_train = torch.tensor(y_train, dtype=torch.float32)
-        # x_val = torch.tensor(x_val, dtype=torch.float32)
-        # y_val = torch.tensor(y_val, dtype=torch.float32)
+        x_train = x_train.float()
+        y_train = y_train.float()
+        x_val = x_val.float()
+        y_val = y_val.float()
 
         # Define the train and validation dataloaders
         train_dataset = torch.utils.data.TensorDataset(x_train, y_train)
