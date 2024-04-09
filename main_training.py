@@ -40,6 +40,7 @@ num_epochs: int = 50
 num_crossval_folds: int = 3
 prediction_threshold: float = 0.5  # threshold for binary classification
 random_seed: int = 42
+layer_size: int = 1000
 results_path: str = "./results.nosync/"
 subsample_path: str = "./subsampled_tasks.csv"
 
@@ -127,8 +128,9 @@ def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, in
 class MLP(nn.Module):
     def __init__(
         self,
-        input_size,
-        num_layers,
+        input_size: int,
+        num_layers: int,
+        layer_size: int,
         hidden_activation_type: str = "relu",
         output_type: str = "regression",
         output_size: int = 1,
@@ -144,18 +146,27 @@ class MLP(nn.Module):
                 f"Activation type {hidden_activation_type} not supported. Supported types are: relu."
             )
 
-            
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(input_size, 1000))  # First layer
-        self.layers.append(self.activation)
-        self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
+        self.layers.append(
+            nn.Sequential(
+                nn.Linear(input_size, layer_size),
+                nn.BatchNorm1d(layer_size),
+                self.activation,
+                nn.Dropout(dropout_rate),
+            )
+        )
         for _ in range(num_layers - 1):
-            self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
-            self.layers.append(self.activation)
-            self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
-            
-        self.output_layer = nn.Linear(1000, output_size)
+            self.layers.append(
+                nn.Sequential(
+                    nn.Linear(layer_size, layer_size),
+                    nn.BatchNorm1d(layer_size),
+                    self.activation,
+                    nn.Dropout(dropout_rate),
+                )
+            )
+
+        self.output_layer = nn.Linear(layer_size, output_size)
 
         if output_type == "regression":
             self.output_activation = nn.Identity()
@@ -173,9 +184,10 @@ class MLP(nn.Module):
             raise ValueError(
                 f"Output type {output_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
             )
-            
-        self.output_operations = nn.Sequential(self.output_layer, self.output_activation)
 
+        self.output_operations = nn.Sequential(
+            self.output_layer, self.output_activation
+        )
 
         if num_mcdropout_iterations > 1:
             self.num_mcdropout_iterations = num_mcdropout_iterations
@@ -198,7 +210,7 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             x = self.activation(layer(x))
-        
+
         x = self.output_operations(x)
         return x
 
@@ -462,12 +474,13 @@ def parallelizible_single_train(
     model_precision: float,
     num_mcdropout_iterations: int,
     num_layers: int,
+    layer_size: int,
     results_path: str,
     datasets_to_use: list[int],
 ) -> None:
-    
+
     task_num = datasets_to_use[dataset_id]
-    
+
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     print(f"Dataset: {name}")
@@ -486,6 +499,7 @@ def parallelizible_single_train(
         model_args=dict(
             input_size=input_size,
             num_layers=num_layers,
+            layer_size=layer_size,
             hidden_activation_type=hidden_activation_type,
             output_type=task_type,
             output_size=output_size,
@@ -523,7 +537,7 @@ def get_already_run_experiments(
 def load_dataset_subsample(file_path: str) -> list:
     with open(file_path, "r") as file:
         dataset_subsample = [(line.strip()) for line in file]
-        
+
     return dataset_subsample
 
 
@@ -531,7 +545,7 @@ def load_dataset_subsample(file_path: str) -> list:
 def main():
 
     # TODO: move global variables to config file
-    
+
     datasets_to_use = load_dataset_subsample(subsample_path)
 
     previous_experiments = get_already_run_experiments(results_path)
@@ -567,6 +581,7 @@ def main():
                     model_precision=model_precision,
                     num_mcdropout_iterations=num_mcdropout_iterations,
                     num_layers=num_layers,
+                    layer_size=layer_size,
                     results_path=results_path,
                     datasets_to_use=datasets_to_use,
                 )
