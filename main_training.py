@@ -480,6 +480,7 @@ def train(
                                 'num_mcdropout_iterations'
                             ]} 
                         num_layers{model_args['num_layers']}
+                        current_learning_rate{param_group['lr']}
                         Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}
                         — Validation Loss: {val_loss.item()}
                         — Mean Validation Uncertainty: {mean_val_uncertainty.item()}
