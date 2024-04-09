@@ -225,10 +225,13 @@ class MLP(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        print(x)
         for layer in self.layers:
             x = self.activation(layer(x))
+            print(x)
 
         x = self.output_operations(x)
+        print(x)
         return x
 
 
