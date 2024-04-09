@@ -428,10 +428,10 @@ def train(
                         (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
                         average="binary" if task_type == "binary classification" else "macro",
                     )
-                    val_mcc = matthews_corrcoef(
-                        y_val.cpu().numpy(),
-                        (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
-                    )
+                    # val_mcc = matthews_corrcoef(
+                    #     y_val.cpu().numpy(),
+                    #     (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
+                    # )
                 elif task_type == "regression":
                     raise NotImplementedError(
                         "Regression task type not implemented yet. Please implement the loss function for regression."
@@ -465,7 +465,7 @@ def train(
                         "epoch": epoch,
                         "val_accuracy": val_accuracy,
                         "val_f1": val_f1,
-                        "val_mcc": val_mcc,
+                        # "val_mcc": val_mcc,
                         "val_loss": val_loss.item(),
                         "mean_val_uncertainty": mean_val_uncertainty.item(),
                         "train_loss": train_loss,
@@ -487,7 +487,7 @@ def train(
                         — Mean Validation Uncertainty: {mean_val_uncertainty.item()}
                         — Validation Accuracy: {val_accuracy}
                         - Validation F1: {val_f1}
-                        - Validation MCC: {val_mcc}"""
+                        """
                     )
 
         best_model_infos.append(best_model_info)
