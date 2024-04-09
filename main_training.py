@@ -30,8 +30,8 @@ import argparse
 
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
-parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=4)
-parser.add_argument("--error_handling", type=str, help="Error handling method", default="ignore")
+parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=0)
+parser.add_argument("--error_handling", type=str, help="Error handling method", default="cacca")
 args = parser.parse_args()
 
 subset_id = args.subset_id
@@ -376,9 +376,10 @@ def train(
 
                 # Forward pass
                 y_pred = model(x_train)
+                
+                print(f"{y_pred=}")
+                print(f"{y_train=}")
 
-                print(y_pred)
-                print(y_train)
                 # Calculate the loss
                 loss = loss_function(y_pred, y_train)
 
@@ -415,10 +416,10 @@ def train(
                         task_type=task_type,
                     )
                     all_y_val_pred = torch.cat(
-                        [all_y_val_pred, y_val_pred_mean], dim=0
+                        [all_y_val_pred, y_val_pred_mean.cpu()], dim=0
                     )
-                    all_y_val = torch.cat([all_y_val, y_val], dim=0)
-
+                    all_y_val = torch.cat([all_y_val, y_val.cpu()], dim=0)
+                    
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
@@ -428,16 +429,16 @@ def train(
                     
                 if task_type == "binary classification" or task_type == "classification":
                     val_accuracy = accuracy_score(
-                        y_val.item().numpy(),
-                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                        y_val.cpu().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
                     )
                     val_f1 = f1_score(
-                        y_val.item().numpy(),
-                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                        y_val.cpu().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
                     )
                     val_mcc = matthews_corrcoef(
-                        y_val.item().numpy(),
-                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                        y_val.cpu().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
                     )
                 elif task_type == "regression":
                     raise NotImplementedError(
@@ -475,7 +476,7 @@ def train(
                         "val_mcc": val_mcc,
                         "val_loss": val_loss.item(),
                         "mean_val_uncertainty": mean_val_uncertainty.item(),
-                        "train_loss": train_loss.item(),
+                        "train_loss": train_loss,
                         "cross_val_fold": fold,
                         "random_seed": random_seed,
                     }
@@ -491,9 +492,9 @@ def train(
                         Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}
                         — Validation Loss: {val_loss.item()}
                         — Mean Validation Uncertainty: {mean_val_uncertainty.item()}
-                        — Validation Accuracy: {val_accuracy.item()}
-                        - Validation F1: {val_f1.item()}
-                        - Validation MCC: {val_mcc.item()}"""
+                        — Validation Accuracy: {val_accuracy}
+                        - Validation F1: {val_f1}
+                        - Validation MCC: {val_mcc}"""
                     )
 
         best_model_infos.append(best_model_info)
