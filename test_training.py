@@ -339,20 +339,21 @@ def train(
                 # Forward pass
                 y_pred = model(x_train)
 
-                # Calculate the loss
-                loss = loss_function(y_pred, y_train)
+                try:
+                    # Calculate the loss
+                    loss = loss_function(y_pred, y_train)
+                except Exception as e:
+                    print(f"Error: {e}")
+                    print(f"y_pred: {y_pred}")
+                    print(f"y_train: {y_train}")
+                    raise e
 
                 # Backward pass
                 accelerator.backward(loss)
                 optimizer.step()
-                try:
-                    train_loss += loss.data.item()
-                except RuntimeError as e:
-                    print(e)
-                    print(train_loss)
-                    print(loss.data)
-                    print(loss.data.item())
-                    raise e
+                
+                train_loss += loss.data.item()
+                
 
             # Evaluate the model on the validation set
             # model.eval()
