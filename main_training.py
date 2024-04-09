@@ -40,11 +40,12 @@ num_epochs: int = 50
 num_crossval_folds: int = 3
 prediction_threshold: float = 0.5  # threshold for binary classification
 random_seed: int = 42
-results_path: str = "./results"
+results_path: str = "./results.nosync/"
+subsample_path: str = "./subsampled_tasks.csv"
 
 # HYPERPARAMETERS TO INVESTIGATE
-task_num_s: int = list(
-    range(4, 9)
+dataset_id_s: list[int] = list(
+    range(0, 5)
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
 dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
 model_precision_s: float = [
@@ -53,8 +54,8 @@ model_precision_s: float = [
     0.5,
     0.9,
 ]  # also known as "tau". Defines the L2 regularization term
-num_mcdropout_iterations_s: int = [3, 5, 10, 20]
-num_layers_s: int = [3, 5, 10]
+num_mcdropout_iterations_s: int = [3, 5, 10, 20, 100]
+num_layers_s: int = [None, 3, 5, 10]
 
 
 # set reproduction seeds
@@ -143,6 +144,7 @@ class MLP(nn.Module):
                 f"Activation type {hidden_activation_type} not supported. Supported types are: relu."
             )
 
+            
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, 1000))  # First layer
@@ -152,6 +154,8 @@ class MLP(nn.Module):
             self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
             self.layers.append(self.activation)
             self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
+            
+        self.output_layer = nn.Linear(1000, output_size)
 
         if output_type == "regression":
             self.output_activation = nn.Identity()
@@ -169,8 +173,9 @@ class MLP(nn.Module):
             raise ValueError(
                 f"Output type {output_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
             )
+            
+        self.output_operations = nn.Sequential(self.output_layer, self.output_activation)
 
-        self.output_layer = nn.Linear(1000, output_size)
 
         if num_mcdropout_iterations > 1:
             self.num_mcdropout_iterations = num_mcdropout_iterations
@@ -193,8 +198,8 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             x = self.activation(layer(x))
-        x = self.output_layer(x)
-        x = self.output_activation(x)
+        
+        x = self.output_operations(x)
         return x
 
 
@@ -350,7 +355,7 @@ def train(
                 accelerator.backward(loss)
                 optimizer.step()
 
-                train_loss += loss.data.item()
+                train_loss += loss.item()
 
             # Evaluate the model on the validation set
             # model.eval()
@@ -400,7 +405,7 @@ def train(
                             f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
                         )
 
-                    total_val_loss += val_loss.data.item()
+                    total_val_loss += val_loss.item()
 
                 # convert the list of uncertainties to a tensor. consider that the tensors might have different shape
                 val_uncertainties = torch.cat(val_uncertainties)
@@ -409,7 +414,7 @@ def train(
                 # Print the training and validation loss for each epoch
                 if val_accuracy > best_val_acc:
                     best_model_info = {
-                        "model_weights": model.state_dict(),
+                        # "model_weights": model.state_dict(),
                         "training_info": {
                             "model": model.__class__.__name__,
                             "dataset_openml_id": task_num,
@@ -422,10 +427,10 @@ def train(
                         },
                         # "optimizer_state": optimizer.state_dict(),
                         "epoch": epoch,
-                        "val_accuracy": val_accuracy,
+                        "val_accuracy": val_accuracy.item(),
                         "val_loss": val_loss.item(),
                         "mean_val_uncertainty": mean_val_uncertainty.item(),
-                        "train_loss": train_loss,
+                        "train_loss": train_loss.item(),
                         "cross_val_fold": fold,
                         "random_seed": random_seed,
                     }
@@ -440,8 +445,8 @@ def train(
                         num_layers{model_args['num_layers']}
                         Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}
                         — Validation Loss: {val_loss.item()}
-                        — Mean Validation Uncertainty: {mean_val_uncertainty}
-                        — Validation Accuracy: {val_accuracy}"""
+                        — Mean Validation Uncertainty: {mean_val_uncertainty.item()}
+                        — Validation Accuracy: {val_accuracy.item()}"""
                     )
 
         best_model_infos.append(best_model_info)
@@ -452,13 +457,17 @@ def train(
 
 
 def parallelizible_single_train(
-    task_num: int,
+    dataset_id: int,
     dropout_rate: float,
     model_precision: float,
     num_mcdropout_iterations: int,
     num_layers: int,
     results_path: str,
+    datasets_to_use: list[int],
 ) -> None:
+    
+    task_num = datasets_to_use[dataset_id]
+    
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     print(f"Dataset: {name}")
@@ -511,22 +520,31 @@ def get_already_run_experiments(
     ]
 
 
+def load_dataset_subsample(file_path: str) -> list:
+    with open(file_path, "r") as file:
+        dataset_subsample = [(line.strip()) for line in file]
+        
+    return dataset_subsample
+
+
 # Update the main function
 def main():
 
     # TODO: move global variables to config file
+    
+    datasets_to_use = load_dataset_subsample(subsample_path)
 
     previous_experiments = get_already_run_experiments(results_path)
 
     for (
-        task_num,
+        dataset_id,
         dropout_rate,
         model_precision,
         num_mcdropout_iterations,
         num_layers,
     ) in tqdm(
         itertools.product(
-            task_num_s,
+            dataset_id_s,
             dropout_rate_s,
             model_precision_s,
             num_mcdropout_iterations_s,
@@ -536,7 +554,7 @@ def main():
         colour="red",
     ):
         if (
-            task_num,
+            dataset_id,
             dropout_rate,
             model_precision,
             num_mcdropout_iterations,
@@ -544,17 +562,18 @@ def main():
         ) not in previous_experiments:
             try:
                 parallelizible_single_train(
-                    task_num=task_num,
+                    dataset_id=dataset_id,
                     dropout_rate=dropout_rate,
                     model_precision=model_precision,
                     num_mcdropout_iterations=num_mcdropout_iterations,
                     num_layers=num_layers,
                     results_path=results_path,
+                    datasets_to_use=datasets_to_use,
                 )
             except RuntimeError as e:
                 print(f"CODE CRUSHED DUE TO THE FOLLOWING REASON: {e}")
                 current_combination = dict(
-                    task_num=task_num,
+                    dataset_id=dataset_id,
                     dropout_rate=dropout_rate,
                     model_precision=model_precision,
                     num_mcdropout_iterations=num_mcdropout_iterations,
