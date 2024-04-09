@@ -31,9 +31,11 @@ import argparse
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=4)
+parser.add_argument("--error_handling", type=str, help="Error handling method", default="ignore")
 args = parser.parse_args()
 
 subset_id = args.subset_id
+error_handling = args.error_handling
 
 all_dataset_ranges = {
     0: range(0,4),
@@ -626,7 +628,10 @@ def main():
                     num_layers=num_layers,
                 )
                 print(f"SKIPPING CURRENT COMBINATION: {current_combination}")
-                continue
+                if error_handling == "ignore":
+                    continue
+                else:
+                    raise e
         else:
             continue
 
