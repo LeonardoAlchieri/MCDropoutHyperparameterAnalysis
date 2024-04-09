@@ -5,6 +5,7 @@
     to be run over for the purpose of our experiments.
 """
 
+from math import isnan
 import random
 
 import os
@@ -119,6 +120,8 @@ def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, in
 
     x = test_dataset[0].drop(columns=[test_task.target_name])
     x = pd.get_dummies(x)
+    # substitute the NaN values with the mean of the column
+    x = x.fillna(x.mean())
     x = torch.tensor(x.values.astype(float), dtype=torch.float32)
 
     y = test_dataset[0][test_task.target_name].to_numpy()
@@ -166,12 +169,12 @@ class MLP(nn.Module):
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, 1000))  # First layer
-        # self.layers.append(nn.BatchNorm1d(1000))
+        self.layers.append(nn.BatchNorm1d(1000))
         self.layers.append(self.activation)
         self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
         for _ in range(num_layers - 1):
             self.layers.append(nn.Linear(1000, 1000))  # Hidden layers
-            # self.layers.append(nn.BatchNorm1d(1000))
+            self.layers.append(nn.BatchNorm1d(1000))
             self.layers.append(self.activation)
             self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
 
@@ -213,14 +216,13 @@ class MLP(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        print(x)
+        if torch.isnan(x).any():
+            raise ValueError(f"Found NaN values in the input tensor {x}")
         for layer in self.layers:
             x = self.activation(layer(x))
-            print(x)
 
         x = self.output_layer(x)
         x = self.output_activation(x)
-        print(x)
         return x
 
 
@@ -368,9 +370,6 @@ def train(
 
                 # Forward pass
                 y_pred = model(x_train)
-                
-                print(f"{y_pred=}")
-                print(f"{y_train=}")
 
                 # Calculate the loss
                 loss = loss_function(y_pred, y_train)
