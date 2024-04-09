@@ -22,10 +22,27 @@ from accelerate import Accelerator
 from numpy import ndarray
 from sklearn.model_selection import KFold
 from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from tqdm.auto import tqdm
 from gc import collect as pick_up_trash
 import itertools
 import argparse
+
+# Add argparse for subset_id
+parser = argparse.ArgumentParser()
+parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on")
+args = parser.parse_args()
+
+subset_id = args.subset_id
+
+all_dataset_ranges = {
+    0: range(0,4),
+    1: range(4,8),
+    2: range(8,12),
+    3: range(12,16),
+    4: range(16,18),
+    5: range(18,20),
+}
 
 # FIXED PARAMETERS
 hidden_activation_type: str = "relu"
@@ -46,8 +63,10 @@ subsample_path: str = "./subsampled_tasks.csv"
 
 # HYPERPARAMETERS TO INVESTIGATE
 dataset_id_s: list[int] = list(
-    range(0, 5)
+    all_dataset_ranges[subset_id]
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
+
+
 dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
 model_precision_s: float = [
     0.001,
@@ -56,7 +75,7 @@ model_precision_s: float = [
     0.9,
 ]  # also known as "tau". Defines the L2 regularization term
 num_mcdropout_iterations_s: int = [3, 5, 10, 20, 100]
-num_layers_s: int = [None, 3, 5, 10]
+num_layers_s: int = [1, 3, 5, 10]
 
 
 # set reproduction seeds
@@ -373,8 +392,9 @@ def train(
             # model.eval()
             with torch.no_grad():
                 total_val_loss = 0
-                val_accuracy = 0
                 val_uncertainties = []
+                all_y_val_pred = torch.Tensor()
+                all_y_val = torch.Tensor()
                 # validate over the validation set
                 for x_val, y_val in tqdm(
                     val_dataloader,
@@ -394,30 +414,41 @@ def train(
                         num_mcdropout_iterations=model_args["num_mcdropout_iterations"],
                         task_type=task_type,
                     )
+                    all_y_val_pred = torch.cat(
+                        [all_y_val_pred, y_val_pred_mean], dim=0
+                    )
+                    all_y_val = torch.cat([all_y_val, y_val], dim=0)
 
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
-                    # TODO: add f1 score and other metrics
-                    if task_type == "binary classification":
-                        val_accuracy += torch.sum(
-                            (y_val_pred_mean > prediction_threshold).int() == y_val
-                        )
-                    elif task_type == "classification":
-                        val_accuracy += torch.sum(
-                            torch.argmax(y_val_pred_mean, dim=1)
-                            == torch.argmax(y_val, dim=1)
-                        )
-                    elif task_type == "regression":
-                        raise NotImplementedError(
-                            "Regression task type not implemented yet. Please implement the loss function for regression."
-                        )
-                    else:
-                        raise ValueError(
-                            f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
-                        )
-
+                    
                     total_val_loss += val_loss.item()
+                    
+                    
+                if task_type == "binary classification" or task_type == "classification":
+                    val_accuracy = accuracy_score(
+                        y_val.item().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                    )
+                    val_f1 = f1_score(
+                        y_val.item().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                    )
+                    val_mcc = matthews_corrcoef(
+                        y_val.item().numpy(),
+                        (y_val_pred_mean > prediction_threshold).int().item().numpy(),
+                    )
+                elif task_type == "regression":
+                    raise NotImplementedError(
+                        "Regression task type not implemented yet. Please implement the loss function for regression."
+                    )
+                else:
+                    raise ValueError(
+                        f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
+                    )
+
+                    
 
                 # convert the list of uncertainties to a tensor. consider that the tensors might have different shape
                 val_uncertainties = torch.cat(val_uncertainties)
@@ -439,7 +470,9 @@ def train(
                         },
                         # "optimizer_state": optimizer.state_dict(),
                         "epoch": epoch,
-                        "val_accuracy": val_accuracy.item(),
+                        "val_accuracy": val_accuracy,
+                        "val_f1": val_f1,
+                        "val_mcc": val_mcc,
                         "val_loss": val_loss.item(),
                         "mean_val_uncertainty": mean_val_uncertainty.item(),
                         "train_loss": train_loss.item(),
@@ -458,7 +491,9 @@ def train(
                         Epoch {epoch+1}/{num_epochs} — Training Loss: {loss.item()}
                         — Validation Loss: {val_loss.item()}
                         — Mean Validation Uncertainty: {mean_val_uncertainty.item()}
-                        — Validation Accuracy: {val_accuracy.item()}"""
+                        — Validation Accuracy: {val_accuracy.item()}
+                        - Validation F1: {val_f1.item()}
+                        - Validation MCC: {val_mcc.item()}"""
                     )
 
         best_model_infos.append(best_model_info)
