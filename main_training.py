@@ -32,7 +32,7 @@ import argparse
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=0)
-parser.add_argument("--error_handling", type=str, help="Error handling method", default="cacca")
+parser.add_argument("--error_handling", type=str, help="Error handling method", default="ignore")
 args = parser.parse_args()
 
 subset_id = args.subset_id
