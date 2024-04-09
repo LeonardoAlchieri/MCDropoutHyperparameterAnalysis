@@ -30,7 +30,7 @@ import argparse
 
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
-parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on")
+parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=4)
 args = parser.parse_args()
 
 subset_id = args.subset_id
@@ -65,8 +65,6 @@ subsample_path: str = "./subsampled_tasks.csv"
 dataset_id_s: list[int] = list(
     all_dataset_ranges[subset_id]
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
-
-
 dropout_rate_s: float = [0.001, 0.05, 0.1, 0.5, 0.9]
 model_precision_s: float = [
     0.001,
@@ -514,7 +512,7 @@ def parallelizible_single_train(
     datasets_to_use: list[int],
 ) -> None:
 
-    task_num = datasets_to_use[dataset_id]
+    task_num = int(datasets_to_use[dataset_id])
 
     print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
