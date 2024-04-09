@@ -346,7 +346,7 @@ def train(
                     print(f"Error: {e}")
                     print(model)
                     # print(f"y_pred: {y_pred}")
-                    # print(f"y_train: {y_train}")
+                    print(f"y_train: {y_train}")
                     raise e
 
                 # Backward pass
