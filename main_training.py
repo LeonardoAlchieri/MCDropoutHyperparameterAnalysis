@@ -7,6 +7,7 @@
 
 from math import isnan
 import random
+from sys import path
 
 import os
 import numpy as np
@@ -20,31 +21,38 @@ import torch.optim as optim
 # import dataset and dataloader for pytoarch
 import torch.utils.data
 from accelerate import Accelerator
-from numpy import ndarray
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from tqdm.auto import tqdm
 from gc import collect as pick_up_trash
 import itertools
 import argparse
 
+path.append("./")
+
+from src.utils.data import get_dataset, load_dataset_subsample
+
+
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
-parser.add_argument("--subset_id", type=int, help="Identifier for the subset to focus on", default=0)
-parser.add_argument("--error_handling", type=str, help="Error handling method", default="ignore")
+parser.add_argument(
+    "--subset_id", type=int, help="Identifier for the subset to focus on", default=0
+)
+parser.add_argument(
+    "--error_handling", type=str, help="Error handling method", default="ignore"
+)
 args = parser.parse_args()
 
 subset_id = args.subset_id
 error_handling = args.error_handling
 
 all_dataset_ranges = {
-    0: range(0,4),
-    1: range(4,8),
-    2: range(8,12),
-    3: range(12,16),
-    4: range(16,18),
-    5: range(18,20),
+    0: range(0, 4),
+    1: range(4, 8),
+    2: range(8, 12),
+    3: range(12, 16),
+    4: range(16, 18),
+    5: range(18, 20),
 }
 
 # FIXED PARAMETERS
@@ -92,57 +100,6 @@ random.seed(random_seed)
 
 
 # Convert the class labels to one-hot encoded vectors
-
-
-def prepare_prediction_array(y: ndarray) -> torch.Tensor:
-    # Use LabelEncoder to encode the class array
-    label_encoder = LabelEncoder()
-    encoded_labels = label_encoder.fit_transform(y)
-
-    num_classes = len(set(encoded_labels))
-
-    # Convert the encoded labels to one-hot encoded vectors using PyTorch
-    class_array_one_hot = torch.nn.functional.one_hot(
-        torch.tensor(encoded_labels), num_classes
-    )
-    if class_array_one_hot.shape[1] == 2:
-        print(f"Binary classification detected. Converting to single vector")
-        # Convert binary classification to a single vector
-        class_array_one_hot = class_array_one_hot[:, 1].unsqueeze(1)
-    return class_array_one_hot
-
-
-def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
-    # 99 is the ID of the OpenML-CC18 study
-    test_task = openml.tasks.get_task(task_num)
-    test_dataset_obj = test_task.get_dataset()
-    test_dataset = test_dataset_obj.get_data()
-
-    x = test_dataset[0].drop(columns=[test_task.target_name])
-    x = pd.get_dummies(x)
-    # substitute the NaN values with the mean of the column
-    x = x.fillna(x.mean())
-    x = torch.tensor(x.values.astype(float), dtype=torch.float32)
-
-    y = test_dataset[0][test_task.target_name].to_numpy()
-    name = test_dataset_obj.name
-    y = prepare_prediction_array(y)
-
-    prediction_type = test_task.task_type
-    if prediction_type == "Supervised Classification":
-        prediction_type = (
-            "multiclass classification" if len(y[0]) > 1 else "binary classification"
-        )
-        # TODO: I should implement the multilabel classification
-    elif "Regression" in prediction_type:
-        prediction_type = "regression"
-    else:
-        raise ValueError(
-            f"Prediction type {prediction_type} not supported. Supported types are: regression, binary classification, multiclass classification, multilabel classification"
-        )
-
-    output_size = len(y[0])
-    return x, y, name, prediction_type, output_size
 
 
 class MLP(nn.Module):
@@ -410,15 +367,17 @@ def train(
                         [all_y_val_pred, y_val_pred_mean.cpu()], dim=0
                     )
                     all_y_val = torch.cat([all_y_val, y_val.cpu()], dim=0)
-                    
+
                     # Calculate the validation loss
                     val_loss = loss_function(y_val_pred_mean, y_val)
                     val_uncertainties.append(y_val_pred_uncertainty)
-                    
+
                     total_val_loss += val_loss.item()
-                    
-                    
-                if task_type == "binary classification" or task_type == "classification":
+
+                if (
+                    task_type == "binary classification"
+                    or task_type == "classification"
+                ):
                     val_accuracy = accuracy_score(
                         y_val.cpu().numpy(),
                         (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
@@ -426,7 +385,11 @@ def train(
                     val_f1 = f1_score(
                         y_val.cpu().numpy(),
                         (y_val_pred_mean > prediction_threshold).int().cpu().numpy(),
-                        average="binary" if task_type == "binary classification" else "macro",
+                        average=(
+                            "binary"
+                            if task_type == "binary classification"
+                            else "macro"
+                        ),
                     )
                     # val_mcc = matthews_corrcoef(
                     #     y_val.cpu().numpy(),
@@ -440,8 +403,6 @@ def train(
                     raise ValueError(
                         f"Task type {task_type} not supported. Supported types are: regression, classification. Found {task_type}."
                     )
-
-                    
 
                 # convert the list of uncertainties to a tensor. consider that the tensors might have different shape
                 val_uncertainties = torch.cat(val_uncertainties)
@@ -561,13 +522,6 @@ def get_already_run_experiments(
         )
         for file in result_files_raw
     ]
-
-
-def load_dataset_subsample(file_path: str) -> list:
-    with open(file_path, "r") as file:
-        dataset_subsample = [(line.strip()) for line in file]
-
-    return dataset_subsample
 
 
 # Update the main function
