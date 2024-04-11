@@ -46,12 +46,12 @@ subset_id = args.subset_id
 error_handling = args.error_handling
 
 all_dataset_ranges = {
-    0: range(0, 4),
-    1: range(4, 8),
-    2: range(8, 12),
-    3: range(12, 16),
-    4: range(16, 18),
-    5: range(18, 20),
+    '0': range(0, 4),
+    '1': range(4, 8),
+    '2': range(8, 12),
+    '3': range(12, 16),
+    '4': range(16, 18),
+    '5': range(18, 20),
     'all': range(0, 20),
 }
 dataset_id_s = list(
