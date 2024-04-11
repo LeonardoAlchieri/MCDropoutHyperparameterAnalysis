@@ -45,6 +45,8 @@ def train(
         model = MLP(**model_args)
         task_type = model.task_type
 
+        x = torch.tensor(x)
+        y = torch.tensor(y)
         # Split the data into training and validation sets
         x_train, x_val = x[train_index].float(), x[val_index].float()
         y_train, y_val = y[train_index].type(torch.long), y[val_index].type(torch.long)
