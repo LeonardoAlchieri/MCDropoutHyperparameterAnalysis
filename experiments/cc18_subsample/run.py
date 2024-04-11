@@ -190,6 +190,7 @@ def main():
         ),
         desc="Experiments",
         colour="red",
+        total=len(dataset_id_s) * len(dropout_rate_s) * len(model_precision_s) * len(num_mcdropout_iterations_s) * len(num_layers_s),
     ):
         if (
             dataset_id,
