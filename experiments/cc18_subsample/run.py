@@ -180,6 +180,7 @@ def main():
     datasets_to_use = load_dataset_subsample(subsample_path)
 
     previous_experiments = get_already_run_experiments(results_path)
+    logger.info(f"{previous_experiments=}")
 
     for (
         dataset_id,
