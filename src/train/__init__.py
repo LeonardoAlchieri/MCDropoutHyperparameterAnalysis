@@ -80,7 +80,7 @@ def train(
         model.train()
 
         best_val_mcc: float = (
-            0.0
+            -2
         )
         best_model_info = dict()
         # Train the model for the specified number of epochs
