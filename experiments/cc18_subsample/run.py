@@ -30,7 +30,7 @@ from src.train import train
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--subset_id", type=int, help="Identifier for the subset to focus on", default=0
+    "--subset_id", help="Identifier for the subset to focus on", default=0
 )
 parser.add_argument(
     "--error_handling", type=str, help="Error handling method", default="ignore"
@@ -50,6 +50,7 @@ all_dataset_ranges = {
     3: range(12, 16),
     4: range(16, 18),
     5: range(18, 20),
+    'all': range(0, 20),
 }
 dataset_id_s = list(
     all_dataset_ranges[subset_id]
