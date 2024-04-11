@@ -1,0 +1,9 @@
+INFO:run:Training on dataset 2079 from the OpenML-CC18 benchmark suite
+INFO:openml.datasets.dataset:pickle load data eucalyptus
+INFO:run:Dataset: eucalyptus
+INFO:run:Training on dataset 2079 from the OpenML-CC18 benchmark suite
+INFO:openml.datasets.dataset:pickle load data eucalyptus
+INFO:run:Dataset: eucalyptus
+INFO:run:Training on dataset 146821 from the OpenML-CC18 benchmark suite
+INFO:openml.datasets.dataset:pickle load data car
+INFO:run:Dataset: car

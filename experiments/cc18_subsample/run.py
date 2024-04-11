@@ -18,6 +18,7 @@ import torch.utils.data
 from tqdm.auto import tqdm
 import itertools
 import argparse
+from logging import getLogger, basicConfig, INFO
 
 path.append("./")
 
@@ -26,6 +27,7 @@ from src.utils.io import load_config
 from src.utils import OutputTypeError
 from src.train import train
 
+logger = getLogger("run")
 
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
@@ -87,9 +89,9 @@ def parallelizible_single_train(
 
     task_num = int(datasets_to_use[dataset_id])
 
-    print(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
+    logger.info(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
-    print(f"Dataset: {name}")
+    logger.info(f"Dataset: {name}")
 
     # Define the model
     input_size = x.shape[1]
@@ -115,7 +117,7 @@ def parallelizible_single_train(
     )
 
     output_filename: str = (
-        f"task{task_num}_dropout_rate{dropout_rate}_model_precision{train_args['model_precision']}_num_mcdropout_iterations{train_args['num_mcdropout_iterations']}_num_layers{train_args['num_layers']}.pth"
+        f"task{task_num}_dropout_rate{dropout_rate}_model_precision{train_args['model_precision']}_num_mcdropout_iterations{model_args['num_mcdropout_iterations']}_num_layers{model_args['num_layers']}.pth"
     )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
@@ -143,9 +145,11 @@ def get_already_run_experiments(
 # Update the main function
 def main():
 
-    path_to_script: str = os.path.abspath(__file__)
+    path_to_script_folder: str = os.path.dirname(os.path.abspath(__file__))
     config_name: str = args.config_name
-    path_to_config: str = os.path.join(os.path.dirname(path_to_script), config_name)
+    
+    basicConfig(filename=os.path.join(path_to_script_folder,f"{config_name.split('.')[0]}.log"), level=INFO)
+    path_to_config: str = os.path.join(path_to_script_folder, config_name)
 
     configs: dict[str, Any] = load_config(path=path_to_config)
     hidden_activation_type = configs["hidden_activation_type"]
@@ -189,7 +193,7 @@ def main():
             num_layers_s,
         ),
         desc="Experiments",
-        colour="red",
+        colour="magenta",
         total=len(dataset_id_s) * len(dropout_rate_s) * len(model_precision_s) * len(num_mcdropout_iterations_s) * len(num_layers_s),
     ):
         if (

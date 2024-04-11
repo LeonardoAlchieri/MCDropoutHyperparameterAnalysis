@@ -38,7 +38,7 @@ def train(
     
     fold = 0
     best_model_infos: list[dict] = []
-    for train_index, val_index in tqdm(kf.split(x,y)):
+    for train_index, val_index in tqdm(kf.split(x,y), desc="Folds", colour="red", leave=False, total=num_folds):
         fold += 1
 
         # FIXME: I don't like that, in each fold, I am ridefining the model and the loss function. This might accidentaly break
@@ -84,7 +84,7 @@ def train(
         )
         best_model_info = dict()
         # Train the model for the specified number of epochs
-        for epoch in tqdm(range(num_epochs), desc="Epochs", colour="green"):
+        for epoch in tqdm(range(num_epochs), desc="Epochs", colour="green", leave=False):
 
             train_loss = 0
             if epoch % learning_rate_epoch_rate == 0:

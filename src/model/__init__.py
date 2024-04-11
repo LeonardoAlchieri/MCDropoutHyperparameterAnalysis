@@ -64,7 +64,7 @@ class MLP(nn.Module):
             self.output_activation = nn.Sigmoid()
             self.task_type = "binary classification"
         elif output_type == "multiclass classification":
-            self.output_activation = nn.Softmax()
+            self.output_activation = nn.Softmax(dim=1)
             self.task_type = output_type
         elif output_type == "multilabel classification":
             self.output_activation = nn.Sigmoid()
@@ -94,16 +94,25 @@ class MLP(nn.Module):
                         f"dropout_rate must be between 0 and 1. Found {dropout_rate}."
                     )
                 )
+        elif isinstance(dropout_rate, int):
+            if dropout_rate == 0:
+                self.dropout_rate = float(dropout_rate)
+            else:
+                raise (
+                    ValueError(
+                        f"if dropout_rate is int, must be 0. Found {dropout_rate}."
+                    )
+                )
         else:
             raise TypeError(
-                f"dropout_rate must be a float. Found {type(dropout_rate)} with value {dropout_rate}."
+                f"dropout_rate must be a float or 0. Found {type(dropout_rate)} with value {dropout_rate}."
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if torch.isnan(x).any():
             raise NanError(f"Found NaN values in the input tensor {x}")
         for layer in self.layers:
-            x = self.activation(layer(x))
+            x = layer(x)
 
         x = self.output_layer(x)
         x = self.output_activation(x)

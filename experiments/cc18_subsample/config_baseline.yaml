@@ -15,7 +15,7 @@ results_path: "./results_baseline.nosync/"
 subsample_path: "./subsampled_tasks.csv"
 
 # HYPERPARAMETERS TO INVESTIGATE
-dropout_rate_s: [0.0]
+dropout_rate_s: [0]
 model_precision_s: [
     0.001,
 ]  # also known as "tau". Defines the L2 regularization term
