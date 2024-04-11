@@ -117,7 +117,7 @@ def parallelizible_single_train(
     )
 
     output_filename: str = (
-        f"task{task_num}_dropout_rate{dropout_rate}_model_precision{train_args['model_precision']}_num_mcdropout_iterations{model_args['num_mcdropout_iterations']}_num_layers{model_args['num_layers']}.pth"
+        f"task{dataset_id}_dropout_rate{dropout_rate}_model_precision{train_args['model_precision']}_num_mcdropout_iterations{model_args['num_mcdropout_iterations']}_num_layers{model_args['num_layers']}.pth"
     )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
