@@ -30,6 +30,12 @@ from src.train import train
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
+    "--subset_id", type=int, help="Identifier for the subset to focus on", default=0
+)
+parser.add_argument(
+    "--error_handling", type=str, help="Error handling method", default="ignore"
+)
+parser.add_argument(
     "--config_name", type=str, help="Path to the config file", default="config.yaml"
 )
 args = parser.parse_args()
