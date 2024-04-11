@@ -17,6 +17,7 @@ import torch
 import torch.utils.data
 from tqdm.auto import tqdm
 import itertools
+from sklearn.preprocessing import MinMaxScaler
 import argparse
 from logging import getLogger, basicConfig, INFO
 
@@ -32,7 +33,7 @@ logger = getLogger("run")
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--subset_id", help="Identifier for the subset to focus on", default=0
+    "--subset_id", help="Identifier for the subset to focus on", default='test'
 )
 parser.add_argument(
     "--error_handling", type=str, help="Error handling method", default="ignore"
@@ -53,6 +54,7 @@ all_dataset_ranges = {
     '4': range(16, 18),
     '5': range(18, 20),
     'all': range(0, 20),
+    'test': [11]
 }
 dataset_id_s = list(
     all_dataset_ranges[subset_id]
@@ -92,6 +94,9 @@ def parallelizible_single_train(
     logger.info(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
     logger.info(f"Dataset: {name}")
+    
+    scaler = MinMaxScaler()
+    x = scaler.fit_transform(x)
 
     # Define the model
     input_size = x.shape[1]

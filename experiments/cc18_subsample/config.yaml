@@ -1,6 +1,6 @@
 # FIXED PARAMETERS
 hidden_activation_type: "relu"
-batch_size: 32
+batch_size: 64
 # length_scale defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
 length_scale: 0.1  
 starting_learning_rate: 0.01

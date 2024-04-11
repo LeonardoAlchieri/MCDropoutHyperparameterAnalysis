@@ -30,14 +30,14 @@ class MLP(nn.Module):
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, hidden_layer_size))  # First layer
-        self.layers.append(nn.BatchNorm1d(hidden_layer_size))
+        # self.layers.append(nn.BatchNorm1d(hidden_layer_size))
         self.layers.append(self.activation)
         self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
         for _ in range(num_layers - 1):
             self.layers.append(
                 nn.Linear(hidden_layer_size, hidden_layer_size)
             )  # Hidden layers
-            self.layers.append(nn.BatchNorm1d(hidden_layer_size))
+            # self.layers.append(nn.BatchNorm1d(hidden_layer_size))
             self.layers.append(self.activation)
             self.layers.append(nn.Dropout(dropout_rate))  # Dropout layer
 

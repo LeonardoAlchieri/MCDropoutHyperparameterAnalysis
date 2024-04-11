@@ -63,11 +63,12 @@ def train(
         )
 
         num_samples = len(x_train)
-        reg = (
-            length_scale**2 * (1 - dropout_rate) / (2.0 * num_samples * model_precision)
-        )
+        # reg = (
+        #     length_scale**2 * (1 - dropout_rate) / (2.0 * num_samples * model_precision)
+        # )
         # Define the optimizer
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=reg)
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+                            #    weight_decay=reg)
 
         model, optimizer, train_dataloader, val_dataloader = accelerator.prepare(
             model, optimizer, train_dataloader, val_dataloader
@@ -225,7 +226,7 @@ def train(
                         "epoch": epoch,
                         "val_accuracy": val_accuracy,
                         "val_f1": val_f1,
-                        # "val_mcc": val_mcc,
+                        "val_mcc": val_mcc,
                         "val_loss": val_loss.item(),
                         "mean_val_shannon_entropy": mean_val_shannon_entropy.item(),
                         "mean_val_variance": mean_val_variance.item(),
