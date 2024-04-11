@@ -207,6 +207,7 @@ def main():
             num_mcdropout_iterations,
             num_layers,
         ) not in previous_experiments:
+            logger.info(f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}.")
             try:
                 parallelizible_single_train(
                     dataset_id=dataset_id,
