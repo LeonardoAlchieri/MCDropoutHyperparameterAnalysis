@@ -11,20 +11,11 @@ from typing import Any
 
 import os
 import numpy as np
-import openml
-import pandas as pd
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 
 # import dataset and dataloader for pytoarch
 import torch.utils.data
-from accelerate import Accelerator
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from tqdm.auto import tqdm
-from gc import collect as pick_up_trash
 import itertools
 import argparse
 
@@ -39,10 +30,7 @@ from src.train import train
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--subset_id", type=int, help="Identifier for the subset to focus on", default=0
-)
-parser.add_argument(
-    "--error_handling", type=str, help="Error handling method", default="ignore"
+    "--config_name", type=str, help="Path to the config file", default="config.yaml"
 )
 args = parser.parse_args()
 
@@ -99,7 +87,7 @@ def parallelizible_single_train(
     # Define the model
     input_size = x.shape[1]
 
-    model_args.extend(
+    model_args.update(
         dict(input_size=input_size, output_type=task_type, output_size=output_size)
     )
     best_model_infos = train(
@@ -109,14 +97,13 @@ def parallelizible_single_train(
         num_folds=train_args["num_folds"],
         num_epochs=train_args["num_epochs"],
         learning_rate=train_args["learning_rate"],
-        dropout_rate=train_args["dropout_rate"],
         model_precision=train_args["model_precision"],
-        random_state=train_args["random_state"],
         batch_size=train_args["batch_size"],
         length_scale=train_args["length_scale"],
         learning_rate_epoch_rate=train_args["learning_rate_epoch_rate"],
         learning_rate_decay=train_args["learning_rate_decay"],
         random_seed=random_seed,
+        dropout_rate=dropout_rate,
         model_args=model_args,
     )
 
@@ -149,7 +136,9 @@ def get_already_run_experiments(
 # Update the main function
 def main():
 
-    path_to_config: str = os.path.join(os.getcwd(), "config.yaml")
+    path_to_script: str = os.path.abspath(__file__)
+    config_name: str = args.config_name
+    path_to_config: str = os.path.join(os.path.dirname(path_to_script), config_name)
 
     configs: dict[str, Any] = load_config(path=path_to_config)
     hidden_activation_type = configs["hidden_activation_type"]
@@ -171,25 +160,6 @@ def main():
     num_layers_s = configs["num_layers_s"]
 
     set_seed(random_seed=random_seed)
-
-    model_args = dict(
-        num_layers=num_layers,
-        layer_size=layer_size,
-        hidden_activation_type=hidden_activation_type,
-        num_mcdropout_iterations=num_mcdropout_iterations,
-        dropout_rate=dropout_rate,
-        prediction_threshold=prediction_threshold,
-    )
-
-    train_args = dict(
-        batch_size=batch_size,
-        length_scale=length_scale,
-        starting_learning_rate=starting_learning_rate,
-        learning_rate_decay=learning_rate_decay,
-        learning_rate_epoch_rate=learning_rate_epoch_rate,
-        num_epochs=num_epochs,
-        num_crossval_folds=num_crossval_folds,
-    )
 
     # TODO: move global variables to config file
 
@@ -225,14 +195,26 @@ def main():
                 parallelizible_single_train(
                     dataset_id=dataset_id,
                     dropout_rate=dropout_rate,
-                    model_precision=model_precision,
-                    num_mcdropout_iterations=num_mcdropout_iterations,
-                    num_layers=num_layers,
-                    layer_size=layer_size,
                     results_path=results_path,
                     datasets_to_use=datasets_to_use,
-                    model_args=model_args,
-                    train_args=train_args,
+                    model_args=dict(
+                        num_layers=num_layers,
+                        hidden_layer_size=layer_size,
+                        hidden_activation_type=hidden_activation_type,
+                        num_mcdropout_iterations=num_mcdropout_iterations,
+                        dropout_rate=dropout_rate,
+                        prediction_threshold=prediction_threshold,
+                    ),
+                    train_args=dict(
+                        batch_size=batch_size,
+                        length_scale=length_scale,
+                        model_precision=model_precision,
+                        learning_rate=starting_learning_rate,
+                        learning_rate_decay=learning_rate_decay,
+                        learning_rate_epoch_rate=learning_rate_epoch_rate,
+                        num_epochs=num_epochs,
+                        num_folds=num_crossval_folds,
+                    ),
                     random_seed=random_seed,
                 )
             except RuntimeError as e:

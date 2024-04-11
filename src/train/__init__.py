@@ -23,7 +23,6 @@ def train(
     dropout_rate: float,
     model_precision: float,
     task_num: int,
-    random_state: int,
     batch_size: int,
     length_scale: int,
     learning_rate_epoch_rate: int,
@@ -35,7 +34,7 @@ def train(
     accelerator = Accelerator()
 
     # Perform k-fold cross validation
-    kf = StratifiedKFold(n_splits=num_folds, random_state=random_state, shuffle=True)
+    kf = StratifiedKFold(n_splits=num_folds, random_state=random_seed, shuffle=True)
     
     fold = 0
     best_model_infos: list[dict] = []
@@ -139,7 +138,6 @@ def train(
                         y_val_pred_variance,
                         y_val_pred_shannon_entropy,
                     ) = model.eval_mc_dropout(
-                        model=model,
                         x=x_val,
                         num_mcdropout_iterations=model_args["num_mcdropout_iterations"],
                         task_type=task_type,
@@ -157,7 +155,7 @@ def train(
                     )
                     # FIXME: check here!
                     all_y_val_pred_all_samples = torch.cat(
-                        [all_y_val_pred_all_samples, y_val_pred_all_samples.cpu()], dim=0
+                        [all_y_val_pred_all_samples, y_val_pred_all_samples.cpu()], dim=1
                     )
 
                     # Calculate the validation loss
@@ -169,31 +167,33 @@ def train(
                     task_type == "binary classification"
                 ):
                     val_accuracy = accuracy_score(
-                        y_val.cpu().numpy(),
-                        (y_val_pred_mean > model.prediction_threshold).int().cpu().numpy(),
+                        all_y_val.cpu().numpy().astype(int),
+                        (all_y_val_pred > model.prediction_threshold).int().cpu().numpy(),
                     )
                     val_f1 = f1_score(
-                        y_val.cpu().numpy(),
-                        (y_val_pred_mean > model.prediction_threshold).int().cpu().numpy(),
+                        all_y_val.cpu().numpy().astype(int),
+                        (all_y_val_pred > model.prediction_threshold).int().cpu().numpy(),
                         average=("binary"),
                     )
                     val_mcc = matthews_corrcoef(
-                        y_val.cpu().numpy(),
-                        (y_val_pred_mean > model.prediction_threshold).int().cpu().numpy(),
+                        all_y_val.cpu().numpy().astype(int),
+                        (all_y_val_pred > model.prediction_threshold).int().cpu().numpy(),
                     )
                 elif task_type == "multiclass classification":
+                    all_y_val = all_y_val.cpu().numpy().astype(int)
+                    all_y_val_pred = torch.argmax(all_y_val_pred, dim=1).cpu().numpy()
                     val_accuracy = accuracy_score(
-                        torch.argmax(y_val, dim=1).cpu().numpy(),
-                        torch.argmax(all_y_val_pred, dim=1).cpu().numpy(),
+                        all_y_val,
+                        all_y_val_pred,
                     )
                     val_f1 = f1_score(
-                        torch.argmax(y_val, dim=1).cpu().numpy(),
-                        torch.argmax(all_y_val_pred, dim=1).cpu().numpy(),
+                        all_y_val,
+                        all_y_val_pred,
                         average=("macro"),
                     )
                     val_mcc = matthews_corrcoef(
-                        torch.argmax(y_val, dim=1).cpu().numpy(),
-                        torch.argmax(all_y_val_pred, dim=1).cpu().numpy(),
+                        all_y_val,
+                        all_y_val_pred,
                     )
                 elif task_type == "regression":
                     raise NotImplementedError(

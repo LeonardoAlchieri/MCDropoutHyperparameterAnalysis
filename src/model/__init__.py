@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.sparse import softmax
 import torch.utils.data
 import torch.nn.functional as F
 
@@ -22,6 +21,12 @@ class MLP(nn.Module):
     ) -> None:
         super(MLP, self).__init__()
 
+        self._set_hidden_activation(hidden_activation_type)
+        self._set_output_activation(output_type)
+        self._set_mcdropout_iterations(num_mcdropout_iterations)
+        self._set_dropout_rate(dropout_rate)
+        self._set_loss_function()
+
         # Define the main layers in the network. We use a simple structure
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_size, hidden_layer_size))  # First layer
@@ -38,16 +43,6 @@ class MLP(nn.Module):
 
         self.output_layer = nn.Linear(hidden_layer_size, output_size)
 
-        self._set_hidden_activation(hidden_activation_type)
-
-        self._set_output_activation(output_type)
-
-        self._set_mcdropout_iterations(num_mcdropout_iterations)
-
-        self._set_dropout_rate(dropout_rate)
-        
-        self._set_loss_function()
-        
         if self.task_type == "binary classification":
             self.prediction_threshold = prediction_threshold
         else:
@@ -69,7 +64,7 @@ class MLP(nn.Module):
             self.output_activation = nn.Sigmoid()
             self.task_type = "binary classification"
         elif output_type == "multiclass classification":
-            self.output_activation = softmax()
+            self.output_activation = nn.Softmax()
             self.task_type = output_type
         elif output_type == "multilabel classification":
             self.output_activation = nn.Sigmoid()
@@ -112,11 +107,11 @@ class MLP(nn.Module):
 
         x = self.output_layer(x)
         x = self.output_activation(x)
-        
+
         if torch.isnan(x).any():
             raise NanError(f"Found NaN values in the output tensor {x}")
         return x
-    
+
     def eval_mc_dropout(
         self,
         x: torch.Tensor,
@@ -129,6 +124,10 @@ class MLP(nn.Module):
         ----------
         x : torch.Tensor
             input tensor
+        num_mcdropout_iterations : int
+            number of iterations to perform the MCDropout
+        task_type : str
+            type of task to perform. It can be either 'binary classification', 'multiclass classification' or 'regression'
 
         Returns
         -------
@@ -137,30 +136,36 @@ class MLP(nn.Module):
             for the num_mcdropout_iterations performed to obtain a Montecarlo sample; the mean
             of the sample and the computed uncertainty (variance if regression, entropy if classification)
         """
-        
-        # NOTE: I have to save all of the samples, as well as calculate 
+
+        # NOTE: I have to save all of the samples, as well as calculate
         # the following statistics: mean, variance, entropy
         dropout_sample = [self.forward(x) for _ in range(num_mcdropout_iterations)]
+        # we put the samples along a new dimension
         dropout_sample = torch.stack(dropout_sample)
         mean = torch.nanmean(dropout_sample, dim=0)
-        
+
         if task_type == "binary classification":
-            shannon_entropy = -torch.nansum(dropout_sample * torch.log(dropout_sample), dim=0)
+            shannon_entropy = -torch.nansum(
+                dropout_sample * torch.log(dropout_sample), dim=0
+            )
             variance = nanvar(dropout_sample, dim=0)
         elif task_type == "multiclass classification":
             mean_argmax = torch.argmax(mean, dim=1)
-            shannon_entropy = -torch.nansum(dropout_sample[:, mean_argmax] * torch.log(dropout_sample[:, mean_argmax]), dim=0)
-            variance = nanvar(dropout_sample[:, mean_argmax], dim=0)
+            mean_argmax = mean_argmax.reshape(1, mean_argmax.shape[0], 1).repeat(dropout_sample.shape[0], 1, 1)
+            # array shape: (dropout_samples, batch_size, num_classes)
+            shannon_entropy = -torch.nansum(
+                dropout_sample.gather(2, mean_argmax)
+                * torch.log(dropout_sample.gather(2, mean_argmax)),
+                dim=0,
+            )
+            variance = nanvar(dropout_sample.gather(2, mean_argmax), dim=0)
         elif task_type == "regression":
             shannon_entropy = variance
         else:
-            raise OutputTypeError(
-                f"Found {task_type}."
-            )
-        
+            raise OutputTypeError(f"Found {task_type}.")
 
-        return dropout_sample, mean, variance, shannon_entropy
-    
+        return dropout_sample, mean, variance.reshape(-1,), shannon_entropy.reshape(-1,)
+
     def _set_loss_function(self) -> callable:
         if self.task_type == "binary classification":
             self.loss_function = F.binary_cross_entropy
@@ -171,6 +176,4 @@ class MLP(nn.Module):
                 "Regression task type not implemented yet. Please implement the loss function for regression."
             )
         else:
-            raise OutputTypeError(
-                f"Found {self.task_type}."
-            )
+            raise OutputTypeError(f"Found {self.task_type}.")
