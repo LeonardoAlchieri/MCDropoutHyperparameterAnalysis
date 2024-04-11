@@ -169,6 +169,9 @@ def main():
     model_precision_s = configs["model_precision_s"]
     num_mcdropout_iterations_s = configs["num_mcdropout_iterations_s"]
     num_layers_s = configs["num_layers_s"]
+    num_torch_threads = configs["num_torch_threads"]
+    
+    torch.set_num_threads(num_torch_threads)
 
     set_seed(random_seed=random_seed)
 
