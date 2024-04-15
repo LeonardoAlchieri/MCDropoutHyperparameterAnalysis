@@ -1,19 +1,19 @@
 # FIXED PARAMETERS
 hidden_activation_type: "relu"
-batch_size: 64
+# batch_size: 64 
 # length_scale defines the length scale for the L2 regularization term. Basically, how much you have to rescale the term.
-length_scale: 0.1  
-starting_learning_rate: 0.01
-learning_rate_decay: 0.5
-learning_rate_epoch_rate: 5
+# length_scale: 0.1  
+# starting_learning_rate: 0.01
+# learning_rate_decay: 0.5
+# learning_rate_epoch_rate: 5
 num_epochs: 50
 num_crossval_folds: 3
-prediction_threshold: 0.5  # threshold for binary classification
+# prediction_threshold: 0.5  # threshold for binary classification
 random_seed: 42
 layer_size: 1000
-results_path: "./results.nosync/"
+results_path: "./results_sklearn.nosync/"
 subsample_path: "./subsampled_tasks.csv"
-num_torch_threads: 1
+num_jobs: -1 # will not actually work
 
 # HYPERPARAMETERS TO INVESTIGATE
 dropout_rate_s: [0.001, 0.05, 0.1, 0.5, 0.9]
@@ -22,6 +22,7 @@ model_precision_s: [
     0.05,
     0.5,
     0.9,
-]  # also known as "tau". Defines the L2 regularization term
+]  # also known as "alpha". Defines the L2 regularization term. The L2 regularization is implemented differently
+# than in Yarin Gal's paper, but the result shold be about the same.
 num_mcdropout_iterations_s: [3, 5, 10, 20, 100]
 num_layers_s: [1, 3, 5, 10]

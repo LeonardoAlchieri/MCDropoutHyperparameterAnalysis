@@ -23,7 +23,7 @@ from logging import getLogger, basicConfig, INFO
 
 path.append("./")
 
-from src.utils.data import get_dataset, load_dataset_subsample
+from src.utils.data import load_dataset_subsample
 from src.utils.io import load_config
 from src.utils import OutputTypeError
 from src.train import train
@@ -33,7 +33,7 @@ logger = getLogger("run")
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--subset_id", help="Identifier for the subset to focus on", default='test'
+    "--subset_id", help="Identifier for the subset to focus on", default="test"
 )
 parser.add_argument(
     "--error_handling", type=str, help="Error handling method", default="ignore"
@@ -47,14 +47,14 @@ subset_id = args.subset_id
 error_handling = args.error_handling
 
 all_dataset_ranges = {
-    '0': range(0, 4),
-    '1': range(4, 8),
-    '2': range(8, 12),
-    '3': range(12, 16),
-    '4': range(16, 18),
-    '5': range(18, 20),
-    'all': range(0, 20),
-    'test': [11]
+    "0": range(0, 4),
+    "1": range(4, 8),
+    "2": range(8, 12),
+    "3": range(12, 16),
+    "4": range(16, 18),
+    "5": range(18, 20),
+    "all": range(0, 20),
+    "test": [11],
 }
 dataset_id_s = list(
     all_dataset_ranges[subset_id]
@@ -72,61 +72,6 @@ def set_seed(random_seed: int) -> None:
 
     # set any other random seed
     random.seed(random_seed)
-
-
-# NOTE: we decided to avoid this part, since it can make the training a lot slower
-# torch.backends.cudnn.deterministic = True
-# torch.backends.cudnn.benchmark = False
-
-
-def parallelizible_single_train(
-    dataset_id: int,
-    dropout_rate: float,
-    model_args: dict,
-    train_args: dict,
-    results_path: str,
-    datasets_to_use: list[int],
-    random_seed: int,
-) -> None:
-
-    task_num = int(datasets_to_use[dataset_id])
-
-    logger.info(f"Training on dataset {task_num} from the OpenML-CC18 benchmark suite")
-    x, y, name, task_type, output_size = get_dataset(task_num=task_num)
-    logger.info(f"Dataset: {name}")
-    
-    scaler = MinMaxScaler()
-    x = scaler.fit_transform(x)
-
-    # Define the model
-    input_size = x.shape[1]
-
-    model_args.update(
-        dict(input_size=input_size, output_type=task_type, output_size=output_size)
-    )
-    best_model_infos = train(
-        x=x,
-        y=y,
-        task_num=task_num,
-        num_folds=train_args["num_folds"],
-        num_epochs=train_args["num_epochs"],
-        learning_rate=train_args["learning_rate"],
-        model_precision=train_args["model_precision"],
-        batch_size=train_args["batch_size"],
-        length_scale=train_args["length_scale"],
-        learning_rate_epoch_rate=train_args["learning_rate_epoch_rate"],
-        learning_rate_decay=train_args["learning_rate_decay"],
-        random_seed=random_seed,
-        dropout_rate=dropout_rate,
-        model_args=model_args,
-    )
-
-    output_filename: str = (
-        f"task{dataset_id}_dropout_rate{dropout_rate}_model_precision{train_args['model_precision']}_num_mcdropout_iterations{model_args['num_mcdropout_iterations']}_num_layers{model_args['num_layers']}.pth"
-    )
-    # save list of dicts to json
-    # TODO: find a better schema. Probably not a good idea to save everything at the end.
-    torch.save(best_model_infos, os.path.join(results_path, output_filename))
 
 
 def get_already_run_experiments(
@@ -152,20 +97,25 @@ def main():
 
     path_to_script_folder: str = os.path.dirname(os.path.abspath(__file__))
     config_name: str = args.config_name
-    
-    basicConfig(filename=os.path.join(path_to_script_folder,f"{config_name.split('.')[0]}.log"), level=INFO)
+
+    basicConfig(
+        filename=os.path.join(
+            path_to_script_folder, f"{config_name.split('.')[0]}.log"
+        ),
+        level=INFO,
+    )
     path_to_config: str = os.path.join(path_to_script_folder, config_name)
 
     configs: dict[str, Any] = load_config(path=path_to_config)
     hidden_activation_type = configs["hidden_activation_type"]
-    batch_size = configs["batch_size"]
-    length_scale = configs["length_scale"]
-    starting_learning_rate = configs["starting_learning_rate"]
-    learning_rate_decay = configs["learning_rate_decay"]
-    learning_rate_epoch_rate = configs["learning_rate_epoch_rate"]
+    # batch_size = configs["batch_size"]
+    # length_scale = configs["length_scale"]
+    # starting_learning_rate = configs["starting_learning_rate"]
+    # learning_rate_decay = configs["learning_rate_decay"]
+    # learning_rate_epoch_rate = configs["learning_rate_epoch_rate"]
     num_epochs = configs["num_epochs"]
     num_crossval_folds = configs["num_crossval_folds"]
-    prediction_threshold = configs["prediction_threshold"]
+    # prediction_threshold = configs["prediction_threshold"]
     random_seed = configs["random_seed"]
     layer_size = configs["layer_size"]
     results_path = configs["results_path"]
@@ -174,9 +124,7 @@ def main():
     model_precision_s = configs["model_precision_s"]
     num_mcdropout_iterations_s = configs["num_mcdropout_iterations_s"]
     num_layers_s = configs["num_layers_s"]
-    num_torch_threads = configs["num_torch_threads"]
-    
-    torch.set_num_threads(num_torch_threads)
+    num_jobs = configs["num_jobs"]
 
     set_seed(random_seed=random_seed)
 
@@ -203,7 +151,11 @@ def main():
         ),
         desc="Experiments",
         colour="magenta",
-        total=len(dataset_id_s) * len(dropout_rate_s) * len(model_precision_s) * len(num_mcdropout_iterations_s) * len(num_layers_s),
+        total=len(dataset_id_s)
+        * len(dropout_rate_s)
+        * len(model_precision_s)
+        * len(num_mcdropout_iterations_s)
+        * len(num_layers_s),
     ):
         if (
             dataset_id,
@@ -212,32 +164,25 @@ def main():
             num_mcdropout_iterations,
             num_layers,
         ) not in previous_experiments:
-            logger.info(f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}.")
+            logger.info(
+                f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}."
+            )
             try:
-                parallelizible_single_train(
-                    dataset_id=dataset_id,
-                    dropout_rate=dropout_rate,
+                train(
+                    task_num=datasets_to_use[dataset_id],
+                    num_folds=num_crossval_folds,
                     results_path=results_path,
-                    datasets_to_use=datasets_to_use,
-                    model_args=dict(
-                        num_layers=num_layers,
-                        hidden_layer_size=layer_size,
-                        hidden_activation_type=hidden_activation_type,
-                        num_mcdropout_iterations=num_mcdropout_iterations,
-                        dropout_rate=dropout_rate,
-                        prediction_threshold=prediction_threshold,
-                    ),
-                    train_args=dict(
-                        batch_size=batch_size,
-                        length_scale=length_scale,
-                        model_precision=model_precision,
-                        learning_rate=starting_learning_rate,
-                        learning_rate_decay=learning_rate_decay,
-                        learning_rate_epoch_rate=learning_rate_epoch_rate,
-                        num_epochs=num_epochs,
-                        num_folds=num_crossval_folds,
-                    ),
                     random_seed=random_seed,
+                    experiment_args={
+                        "dropout_rate": dropout_rate,
+                        "alpha": model_precision,
+                        "mcdropout_num": num_mcdropout_iterations,
+                        "num_layers": num_layers,
+                    },
+                    model_args={"layer_size": layer_size,
+                                "hidden_activation_type": hidden_activation_type},
+                    train_args={"num_epochs": num_epochs},
+                    num_jobs=num_jobs,
                 )
             except RuntimeError as e:
                 print(f"CODE CRUSHED DUE TO THE FOLLOWING REASON: {e}")
