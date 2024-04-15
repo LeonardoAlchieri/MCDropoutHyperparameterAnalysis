@@ -1,9 +1,11 @@
 # Creating a custom MLPDropout classifier
+from sklearn.base import check_is_fitted
 from sklearn.neural_network import MLPClassifier
 from sklearn.neural_network._stochastic_optimizers import AdamOptimizer, SGDOptimizer
 from sklearn.neural_network._base import ACTIVATIONS, DERIVATIVES, LOSS_FUNCTIONS
 from sklearn.utils import shuffle, gen_batches, check_random_state, _safe_indexing
 from sklearn.utils.extmath import safe_sparse_dot
+from sklearn.utils.validation import _predict
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 import numpy as np
@@ -441,3 +443,34 @@ class MLPDropout(MLPClassifier):
             y_pred = y_pred.ravel()
 
         return self._label_binarizer.inverse_transform(y_pred)
+    
+    def predict_proba(self, X):
+        """Probability estimates.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        y_prob : ndarray of shape (n_samples, n_classes)
+            The predicted probability of the sample for each class in the
+            model, where classes are ordered as they are in `self.classes_`.
+        """
+        check_is_fitted(self)
+        
+        layer_units = [X.shape[1]] + list(self.hidden_layer_sizes) + [self.n_outputs_]
+        if self.mcdropout:
+            dropout_masks = self._create_dropout_masks(layer_units)
+        else:            
+            dropout_masks = None
+        y_pred = self._forward_pass_fast(X, dropout_masks=dropout_masks)
+
+        if self.n_outputs_ == 1:
+            y_pred = y_pred.ravel()
+
+        if y_pred.ndim == 1:
+            return np.vstack([1 - y_pred, y_pred]).T
+        else:
+            return y_pred

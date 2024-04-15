@@ -15,8 +15,11 @@ from src.utils.data import get_dataset
 from src.model.sklearn import MLPDropout
 from src.utils import OutputTypeError
 
+from sklearn.utils._testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 
-def perform_baseline_prediction(
+@ignore_warnings(category=ConvergenceWarning)
+def perform_fold_prediction(
     x_train: np.ndarray,
     y_train: np.ndarray,
     x_val: np.ndarray,
@@ -87,6 +90,7 @@ def perform_baseline_prediction(
 
 def train(
     task_num: int,
+    dataset_id: int,
     num_folds: int,
     results_path: str,
     random_seed: int,
@@ -117,7 +121,7 @@ def train(
 
         x_train, x_val = x[train_index], x[val_index]
         y_train, y_val = y[train_index], y[val_index]
-        fold_result = perform_baseline_prediction(
+        fold_result = perform_fold_prediction(
             x_train=x_train,
             y_train=y_train,
             x_val=x_val,
@@ -144,7 +148,7 @@ def train(
     # return fold_results
 
     output_filename: str = (
-        f"task{task_num}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}.pth"
+        f"task{dataset_id}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}.pth"
     )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
