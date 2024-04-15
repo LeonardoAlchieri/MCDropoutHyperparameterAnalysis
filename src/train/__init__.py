@@ -8,7 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 from tqdm.auto import tqdm
-from scipy.stats import mode
+from scipy.stats import mode, entropy
 
 
 from src.utils.data import get_dataset
@@ -49,9 +49,14 @@ def perform_fold_prediction(
     )
 
     classifier.fit(x_train, y_train)
-    y_preds_proba = np.array([
+    y_preds_proba = [
         classifier.predict_proba(x_val) for _ in range(experiment_args["mcdropout_num"])
-    ])
+    ]
+    y_preds = [classifier._label_binarizer.inverse_transform(prediction) for prediction in y_preds_proba]
+    
+    y_preds_proba = np.array(y_preds_proba)
+    y_preds = np.array(y_preds)
+    
     # this array will have shape (num_mcdropout_iterations, num_samples, num_classes)
     
     # y_preds = [
@@ -67,24 +72,28 @@ def perform_fold_prediction(
     #     axis=1,
     # )
     # # shannon_entropy = np.nan_to_num(shannon_entropy, nan=0.0)
-    
 
-    # val_accuracy = accuracy_score(y_val, y_pred)
-    # val_f1 = f1_score(
-    #     y_val,
-    #     y_pred,
-    #     average="binary" if task_type == "binary classification" else "macro",
-    # )
-    # val_mcc = matthews_corrcoef(y_val, y_pred)
+    y_pred = mode(y_preds, axis=0)[0]
+    # NOTE: we are selecting the entropy of the class chosen as "prediction"
+    entropies = np.take_along_axis(entropy(y_preds_proba, axis=0), y_pred.astype(int).reshape(-1,1), axis=1)
+    
+    val_accuracy = accuracy_score(y_val, y_pred)
+    val_f1 = f1_score(
+        y_val,
+        y_pred,
+        average="binary" if task_type == "binary classification" else "macro",
+    )
+    val_mcc = matthews_corrcoef(y_val, y_pred)
 
     return {
         "task_name": name,
         "task_type": task_type,
         "output_size": output_size,
-        # "val_accuracy": val_accuracy,
-        # "val_f1": val_f1,
-        # "val_mcc": val_mcc,
-        "y_val_pred_proba": y_preds_proba,
+        "val_accuracy": val_accuracy,
+        "val_f1": val_f1,
+        "val_mcc": val_mcc,
+        "y_val_preds_proba": y_preds_proba,
+        "entropies": entropies,
     }
 
 

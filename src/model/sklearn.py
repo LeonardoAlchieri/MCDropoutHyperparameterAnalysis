@@ -5,7 +5,6 @@ from sklearn.neural_network._stochastic_optimizers import AdamOptimizer, SGDOpti
 from sklearn.neural_network._base import ACTIVATIONS, DERIVATIVES, LOSS_FUNCTIONS
 from sklearn.utils import shuffle, gen_batches, check_random_state, _safe_indexing
 from sklearn.utils.extmath import safe_sparse_dot
-from sklearn.utils.validation import _predict
 import warnings
 from sklearn.exceptions import ConvergenceWarning
 import numpy as np

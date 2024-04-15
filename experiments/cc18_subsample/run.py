@@ -54,7 +54,7 @@ all_dataset_ranges = {
     "4": range(16, 18),
     "5": range(18, 20),
     "all": range(0, 20),
-    "test": [11],
+    "test": [10],
 }
 dataset_id_s = list(
     all_dataset_ranges[subset_id]
@@ -170,6 +170,7 @@ def main():
             try:
                 train(
                     task_num=datasets_to_use[dataset_id],
+                    dataset_id=dataset_id,
                     num_folds=num_crossval_folds,
                     results_path=results_path,
                     random_seed=random_seed,

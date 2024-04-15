@@ -10,18 +10,20 @@ num_epochs: 50
 num_crossval_folds: 3
 # prediction_threshold: 0.5  # threshold for binary classification
 random_seed: 42
-layer_size: 1000
+layer_size: 200
 results_path: "./results_sklearn.nosync/"
 subsample_path: "./subsampled_tasks.csv"
 num_jobs: -1 # will not actually work
 
 # HYPERPARAMETERS TO INVESTIGATE
 dropout_rate_s: [0.001, 0.05, 0.1, 0.5, 0.9]
+# dropout_rate_s: [0.1]
 model_precision_s: [
     0.001,
     0.05,
+    # 0.5,
     0.5,
-    0.9,
+    1.0,
 ]  # also known as "alpha". Defines the L2 regularization term. The L2 regularization is implemented differently
 # than in Yarin Gal's paper, but the result shold be about the same.
 num_mcdropout_iterations_s: [3, 5, 10, 20, 100]
