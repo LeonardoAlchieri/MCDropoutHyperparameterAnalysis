@@ -17,6 +17,23 @@ from src.utils import OutputTypeError
 
 from sklearn.utils._testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import LocalOutlierFactor
+        
+
+def calculate_outlier_info(x_val: np.ndarray, random_seed: int = 42) -> np.ndarray:
+    outlier_classifier = IsolationForest(random_state=random_seed)
+    outlier_classifier.fit(x_val)
+    outlier_vals = outlier_classifier.score_samples(x_val)
+    return outlier_vals
+
+def calculate_anonmaly_info(x_val: np.ndarray) -> np.ndarray:
+    anomaly_classifier = LocalOutlierFactor()
+    anomaly_classifier.fit(x_val)
+    anomaly_vals = anomaly_classifier.score_samples(x_val)
+    return anomaly_vals
+    
+
 
 @ignore_warnings(category=ConvergenceWarning)
 def perform_fold_prediction(
@@ -56,22 +73,6 @@ def perform_fold_prediction(
     
     y_preds_proba = np.array(y_preds_proba)
     y_preds = np.array(y_preds)
-    
-    # this array will have shape (num_mcdropout_iterations, num_samples, num_classes)
-    
-    # y_preds = [
-    #     np.argmax(y_pred, axis=1).astype(float) for y_pred in y_preds_proba
-    # ]
-    # y_pred = mode(y_preds, axis=0)[0]
-    
-    # shannon_entropy = -np.sum(
-    #     np.mean(y_preds_proba, axis=0)
-    #     * np.log2(
-    #         np.mean(y_preds_proba, axis=0)
-    #     ),
-    #     axis=1,
-    # )
-    # # shannon_entropy = np.nan_to_num(shannon_entropy, nan=0.0)
 
     y_pred = mode(y_preds, axis=0)[0]
     # NOTE: we are selecting the entropy of the class chosen as "prediction"
@@ -87,6 +88,10 @@ def perform_fold_prediction(
     )
     val_mcc = matthews_corrcoef(y_val, y_pred)
 
+    outlier_vals = calculate_outlier_info(x_val=x_val, random_seed=random_seed)
+    anomaly_vals = calculate_anonmaly_info(x_val=x_val, random_seed=random_seed)
+    
+
     return {
         "task_name": name,
         "task_type": task_type,
@@ -95,8 +100,36 @@ def perform_fold_prediction(
         "val_f1": val_f1,
         "val_mcc": val_mcc,
         "y_val_preds_proba": y_preds_proba,
+        "outlier_vals": outlier_vals,
+        "anomaly_vals": anomaly_vals,
         # "entropies": entropies,
     }
+    
+@ignore_warnings(category=ConvergenceWarning)
+def perform_only_outlier_detection(x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+    name: str,
+    task_type: str,
+    output_size: int,
+    model_args: dict,
+    train_args: dict,
+    experiment_args: dict,
+    random_seed: int = 42,
+    num_jobs: int = -1,):
+    
+    outlier_vals = calculate_outlier_info(x_val=x_val, random_seed=random_seed)
+    anomaly_vals = calculate_anonmaly_info(x_val=x_val)
+    
+    return {
+        "task_name": name,
+        "task_type": task_type,
+        "output_size": output_size,
+        "outlier_vals": outlier_vals,
+        "anomaly_vals": anomaly_vals,
+    }
+    
 
 
 def train(
@@ -114,6 +147,7 @@ def train(
     model_args: dict = {"layer_size": 100, "hidden_activation_type": "relu"},
     train_args: dict = {"num_epochs": 100},
     num_jobs: int = -1,
+    outlier_flag: bool = False,
 ) -> None:
 
     x, y, name, task_type, output_size = get_dataset(task_num=task_num)
@@ -132,20 +166,36 @@ def train(
 
         x_train, x_val = x[train_index], x[val_index]
         y_train, y_val = y[train_index], y[val_index]
-        fold_result = perform_fold_prediction(
-            x_train=x_train,
-            y_train=y_train,
-            x_val=x_val,
-            y_val=y_val,
-            name=name,
-            task_type=task_type,
-            output_size=output_size,
-            model_args=model_args,
-            train_args=train_args,
-            experiment_args=experiment_args,
-            random_seed=random_seed,
-            num_jobs=num_jobs,
-        )
+        if not outlier_flag:
+            fold_result = perform_fold_prediction(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                name=name,
+                task_type=task_type,
+                output_size=output_size,
+                model_args=model_args,
+                train_args=train_args,
+                experiment_args=experiment_args,
+                random_seed=random_seed,
+                num_jobs=num_jobs,
+            )
+        else:
+            fold_result = perform_only_outlier_detection(
+                x_train=x_train,
+                y_train=y_train,
+                x_val=x_val,
+                y_val=y_val,
+                name=name,
+                task_type=task_type,
+                output_size=output_size,
+                model_args=model_args,
+                train_args=train_args,
+                experiment_args=experiment_args,
+                random_seed=random_seed,
+                num_jobs=num_jobs,
+            )
         fold_result.update(
             {
                 "fold": fold,
