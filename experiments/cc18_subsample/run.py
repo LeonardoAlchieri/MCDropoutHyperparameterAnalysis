@@ -27,6 +27,7 @@ from src.utils.data import load_dataset_subsample
 from src.utils.io import load_config
 from src.utils import OutputTypeError
 from src.train import train
+from src.utils import set_seed
 
 logger = getLogger("run")
 
@@ -59,20 +60,6 @@ all_dataset_ranges = {
 dataset_id_s = list(
     all_dataset_ranges[subset_id]
 )  # this identifies the dataset inside the OpenML-CC18 benchmark suitea
-
-
-def set_seed(random_seed: int) -> None:
-    # set reproduction seeds
-    torch.manual_seed(random_seed)
-    torch.cuda.manual_seed(random_seed)
-    torch.cuda.manual_seed_all(random_seed)
-
-    # set numpy seed
-    np.random.seed(random_seed)
-
-    # set any other random seed
-    random.seed(random_seed)
-
 
 def get_already_run_experiments(
     path_to_ressults_folder: str,

@@ -1,6 +1,4 @@
 #
-data.nosync/
-data/
 *.nosync/
 .DS_Store
 .vscode/

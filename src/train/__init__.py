@@ -75,7 +75,9 @@ def perform_fold_prediction(
 
     y_pred = mode(y_preds, axis=0)[0]
     # NOTE: we are selecting the entropy of the class chosen as "prediction"
-    entropies = np.take_along_axis(entropy(y_preds_proba, axis=0), y_pred.astype(int).reshape(-1,1), axis=1)
+    # entropies = np.take_along_axis(entropy(y_preds_proba, axis=0), y_pred.astype(int).reshape(-1,1), axis=1)
+    # FIXME: the entropies calculation is wrong
+    
     
     val_accuracy = accuracy_score(y_val, y_pred)
     val_f1 = f1_score(
@@ -93,7 +95,7 @@ def perform_fold_prediction(
         "val_f1": val_f1,
         "val_mcc": val_mcc,
         "y_val_preds_proba": y_preds_proba,
-        "entropies": entropies,
+        # "entropies": entropies,
     }
 
 

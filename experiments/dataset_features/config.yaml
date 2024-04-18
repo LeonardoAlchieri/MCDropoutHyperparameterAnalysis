@@ -1,0 +1,4 @@
+random_seed: 42
+subsample_path: "./subsampled_tasks.csv"
+results_path: "./dataset_measures.nosync/"
+num_jobs: 8

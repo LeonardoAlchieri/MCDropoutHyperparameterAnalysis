@@ -1,4 +1,6 @@
 import torch
+import random
+import numpy
 
 
 def nanvar(
@@ -17,3 +19,16 @@ class OutputTypeError(ValueError):
 class NanError(ValueError):
     def __init__(self, message):
         super().__init__(message)
+        
+
+def set_seed(random_seed: int) -> None:
+    # set reproduction seeds
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    torch.cuda.manual_seed_all(random_seed)
+
+    # set numpy seed
+    numpy.random.seed(random_seed)
+
+    # set any other random seed
+    random.seed(random_seed)
