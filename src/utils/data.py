@@ -25,7 +25,7 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     return torch.tensor(encoded_labels, dtype=torch.float32), num_classes
 
 
-def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
+def get_dataset(task_num: int, outer_fold_idxs: list[int] | None = None) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
     task = openml.tasks.get_task(task_num)
     dataset_obj = task.get_dataset()
@@ -55,7 +55,10 @@ def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, in
         raise ValueError(
             f"Found prediction type {prediction_type}. Support are 'Supervised Classification' and 'Regression'."
         )
-        
+    
+    if outer_fold_idxs:
+        x = x[outer_fold_idxs]
+        y = y[outer_fold_idxs]
     return x, y, name, prediction_type, num_classes
 
 

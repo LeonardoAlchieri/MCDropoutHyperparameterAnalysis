@@ -1,7 +1,8 @@
 import torch
 import random
 import numpy
-
+import os
+from logging import INFO, basicConfig
 
 def nanvar(
     tensor: torch.Tensor, dim: int | tuple | None = None, keepdim: bool = False
@@ -32,3 +33,11 @@ def set_seed(random_seed: int) -> None:
 
     # set any other random seed
     random.seed(random_seed)
+    
+def set_logger(path_to_script_folder: str, config_name: str) -> None:
+    basicConfig(
+        filename=os.path.join(
+            path_to_script_folder, f"{config_name.split('.')[0]}.log"
+        ),
+        level=INFO,
+    )

@@ -19,7 +19,7 @@ from sklearn.utils._testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
-        
+
 
 def calculate_outlier_info(x_val: np.ndarray, random_seed: int = 42) -> np.ndarray:
     outlier_classifier = IsolationForest(random_state=random_seed)
@@ -27,12 +27,12 @@ def calculate_outlier_info(x_val: np.ndarray, random_seed: int = 42) -> np.ndarr
     outlier_vals = outlier_classifier.score_samples(x_val)
     return outlier_vals
 
+
 def calculate_anonmaly_info(x_val: np.ndarray) -> np.ndarray:
     anomaly_classifier = LocalOutlierFactor()
     anomaly_classifier.fit(x_val)
-    anomaly_vals = anomaly_classifier.score_samples(x_val)
+    anomaly_vals = anomaly_classifier.negative_outlier_factor_
     return anomaly_vals
-    
 
 
 @ignore_warnings(category=ConvergenceWarning)
@@ -51,7 +51,6 @@ def perform_fold_prediction(
     num_jobs: int = -1,
 ):
 
-    # mkl.set_num_threads(num_jobs)
     classifier = MLPDropout(
         random_state=random_seed,
         max_iter=train_args["num_epochs"],
@@ -69,8 +68,11 @@ def perform_fold_prediction(
     y_preds_proba = [
         classifier.predict_proba(x_val) for _ in range(experiment_args["mcdropout_num"])
     ]
-    y_preds = [classifier._label_binarizer.inverse_transform(prediction) for prediction in y_preds_proba]
-    
+    y_preds = [
+        classifier._label_binarizer.inverse_transform(prediction)
+        for prediction in y_preds_proba
+    ]
+
     y_preds_proba = np.array(y_preds_proba)
     y_preds = np.array(y_preds)
 
@@ -78,8 +80,7 @@ def perform_fold_prediction(
     # NOTE: we are selecting the entropy of the class chosen as "prediction"
     # entropies = np.take_along_axis(entropy(y_preds_proba, axis=0), y_pred.astype(int).reshape(-1,1), axis=1)
     # FIXME: the entropies calculation is wrong
-    
-    
+
     val_accuracy = accuracy_score(y_val, y_pred)
     val_f1 = f1_score(
         y_val,
@@ -90,7 +91,6 @@ def perform_fold_prediction(
 
     outlier_vals = calculate_outlier_info(x_val=x_val, random_seed=random_seed)
     anomaly_vals = calculate_anonmaly_info(x_val=x_val, random_seed=random_seed)
-    
 
     return {
         "task_name": name,
@@ -104,9 +104,11 @@ def perform_fold_prediction(
         "anomaly_vals": anomaly_vals,
         # "entropies": entropies,
     }
-    
+
+
 @ignore_warnings(category=ConvergenceWarning)
-def perform_only_outlier_detection(x_train: np.ndarray,
+def perform_only_outlier_detection(
+    x_train: np.ndarray,
     y_train: np.ndarray,
     x_val: np.ndarray,
     y_val: np.ndarray,
@@ -117,11 +119,12 @@ def perform_only_outlier_detection(x_train: np.ndarray,
     train_args: dict,
     experiment_args: dict,
     random_seed: int = 42,
-    num_jobs: int = -1,):
-    
+    num_jobs: int = -1,
+):
+
     outlier_vals = calculate_outlier_info(x_val=x_val, random_seed=random_seed)
     anomaly_vals = calculate_anonmaly_info(x_val=x_val)
-    
+
     return {
         "task_name": name,
         "task_type": task_type,
@@ -129,15 +132,16 @@ def perform_only_outlier_detection(x_train: np.ndarray,
         "outlier_vals": outlier_vals,
         "anomaly_vals": anomaly_vals,
     }
-    
 
 
 def train(
     task_num: int,
     dataset_id: int,
-    num_folds: int,
+    num_inner_folds: int,
     results_path: str,
     random_seed: int,
+    outer_fold_idxs: list[int] | None = None,
+    outer_fold_id: str | None = None,
     experiment_args: dict = {
         "dropout_rate": 0.05,
         "alpha": 0.0,
@@ -150,24 +154,32 @@ def train(
     outlier_flag: bool = False,
 ) -> None:
 
-    x, y, name, task_type, output_size = get_dataset(task_num=task_num)
+    x, y, name, task_type, output_size = get_dataset(
+        task_num=task_num, outer_fold_idxs=outer_fold_idxs
+    )
 
     scaler = MinMaxScaler()
     x = scaler.fit_transform(x)
 
-    kf = StratifiedKFold(n_splits=num_folds, random_state=random_seed, shuffle=True)
+    kf = StratifiedKFold(
+        n_splits=num_inner_folds, random_state=random_seed, shuffle=True
+    )
 
-    fold_results: list[dict] = []
-    fold = 0
+    inner_fold_results: list[dict] = []
+    inner_fold = 0
     for train_index, val_index in tqdm(
-        kf.split(x, y), desc="Folds", colour="magenta", total=num_folds, disable=True
+        kf.split(x, y),
+        desc="Folds",
+        colour="magenta",
+        total=num_inner_folds,
+        disable=True,
     ):
-        fold += 1
+        inner_fold += 1
 
         x_train, x_val = x[train_index], x[val_index]
         y_train, y_val = y[train_index], y[val_index]
         if not outlier_flag:
-            fold_result = perform_fold_prediction(
+            inner_fold_result = perform_fold_prediction(
                 x_train=x_train,
                 y_train=y_train,
                 x_val=x_val,
@@ -182,7 +194,7 @@ def train(
                 num_jobs=num_jobs,
             )
         else:
-            fold_result = perform_only_outlier_detection(
+            inner_fold_result = perform_only_outlier_detection(
                 x_train=x_train,
                 y_train=y_train,
                 x_val=x_val,
@@ -196,21 +208,27 @@ def train(
                 random_seed=random_seed,
                 num_jobs=num_jobs,
             )
-        fold_result.update(
+        inner_fold_result.update(
             {
-                "fold": fold,
+                "outer_fold": outer_fold_id,
+                "inner_fold": inner_fold,
                 "task_num": task_num,
                 "experiment_args": experiment_args,
                 "model_args": model_args,
                 "train_args": train_args,
             }
         )
-        fold_results.append(fold_result)
-    # return fold_results
+        inner_fold_results.append(inner_fold_result)
+    # return inner_fold_results
 
-    output_filename: str = (
-        f"task{dataset_id}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}.pth"
-    )
+    if outer_fold_id:
+        output_filename: str = (
+            f"task{dataset_id}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}_outerfold{outer_fold_id}.pth"
+        )
+    else:
+        output_filename: str = (
+            f"task{dataset_id}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}.pth"
+        )
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
-    torch.save(fold_results, os.path.join(results_path, output_filename))
+    torch.save(inner_fold_results, os.path.join(results_path, output_filename))
