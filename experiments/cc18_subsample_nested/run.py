@@ -5,19 +5,14 @@
     to be run over for the purpose of our experiments.
 """
 
-import random
 from sys import path
 from typing import Any
 
 import os
-import numpy as np
-import torch
 
 # import dataset and dataloader for pytoarch
-import torch.utils.data
 from tqdm.auto import tqdm
 import itertools
-from sklearn.preprocessing import MinMaxScaler
 import argparse
 from warnings import warn
 from joblib import Parallel, delayed
@@ -25,7 +20,7 @@ from logging import getLogger, basicConfig, INFO
 
 path.append("./")
 
-from src.utils.data import load_dataset_subsample
+from src.utils.data import load_dataset_subsample, get_outer_fold
 from src.utils.io import load_config
 from src.utils import OutputTypeError
 from src.train import train
@@ -82,6 +77,38 @@ def get_already_run_experiments(
     ]
 
 
+def train_parallel(
+    task_num,
+    dataset_id,
+    num_inner_folds,
+    results_path,
+    random_seed,
+    outer_fold_idxs,
+    outer_fold_id,
+    experiment_args,
+    model_args,
+    train_args,
+    num_jobs,
+    outlier_flag,
+    outer_fold_idxs_s,
+):
+    for outer_fold_id, outer_fold_idxs in outer_fold_idxs_s[task_num].items():
+        train(
+            task_num=task_num,
+            dataset_id=dataset_id,
+            num_inner_folds=num_inner_folds,
+            results_path=results_path,
+            random_seed=random_seed,
+            outer_fold_idxs=outer_fold_idxs,
+            outer_fold_id=outer_fold_id,
+            experiment_args=experiment_args,
+            model_args=model_args,
+            train_args=train_args,
+            num_jobs=num_jobs,
+            outlier_flag=outlier_flag,
+        )
+
+
 # Update the main function
 def main():
 
@@ -115,6 +142,7 @@ def main():
     num_mcdropout_iterations_s = configs["num_mcdropout_iterations_s"]
     num_layers_s = configs["num_layers_s"]
     num_jobs = configs["num_jobs"]
+    path_to_fold_info = configs["path_to_fold_info"]
     outlier_only_flag = configs.get("outlier_only_flag", False)
 
     set_seed(random_seed=random_seed)
@@ -125,6 +153,10 @@ def main():
 
     previous_experiments = get_already_run_experiments(results_path)
     logger.info(f"{previous_experiments=}")
+
+    # the keys of outer_fold_idxs_s are the ids of the outer fold, used to check if
+    # there is a previous experiment for that fold
+    outer_fold_idxs_s = get_outer_fold(path=path_to_fold_info, fold_type="train")
 
     if num_jobs == 1:
         for (
@@ -159,64 +191,71 @@ def main():
                 logger.info(
                     f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}."
                 )
-                try:
-                    train(
-                        task_num=datasets_to_use[dataset_id],
-                        dataset_id=dataset_id,
-                        num_folds=num_crossval_folds,
-                        results_path=results_path,
-                        random_seed=random_seed,
-                        experiment_args={
-                            "dropout_rate": dropout_rate,
-                            "alpha": model_precision,
-                            "mcdropout_num": num_mcdropout_iterations,
-                            "num_layers": num_layers,
-                        },
-                        model_args={
-                            "layer_size": layer_size,
-                            "hidden_activation_type": hidden_activation_type,
-                        },
-                        train_args={"num_epochs": num_epochs},
-                        num_jobs=num_jobs,
-                        outlier_flag=outlier_only_flag,
-                    )
+                for outer_fold_id, outer_fold_idxs in outer_fold_idxs_s[
+                    datasets_to_use[dataset_id]
+                ].items():
+                    try:
+                        train(
+                            task_num=datasets_to_use[dataset_id],
+                            dataset_id=dataset_id,
+                            num_inner_folds=num_crossval_folds,
+                            results_path=results_path,
+                            random_seed=random_seed,
+                            outer_fold_idxs=outer_fold_idxs,
+                            outer_fold_id=outer_fold_id,
+                            experiment_args={
+                                "dropout_rate": dropout_rate,
+                                "alpha": model_precision,
+                                "mcdropout_num": num_mcdropout_iterations,
+                                "num_layers": num_layers,
+                            },
+                            model_args={
+                                "layer_size": layer_size,
+                                "hidden_activation_type": hidden_activation_type,
+                            },
+                            train_args={"num_epochs": num_epochs},
+                            num_jobs=num_jobs,
+                            outlier_flag=outlier_only_flag,
+                        )
 
-                except RuntimeError as e:
-                    print(f"CODE CRUSHED DUE TO THE FOLLOWING REASON: {e}")
-                    current_combination = dict(
-                        dataset_id=dataset_id,
-                        dropout_rate=dropout_rate,
-                        model_precision=model_precision,
-                        num_mcdropout_iterations=num_mcdropout_iterations,
-                        num_layers=num_layers,
-                    )
-                    print(f"SKIPPING CURRENT COMBINATION: {current_combination}")
-                    if error_handling == "ignore":
-                        continue
-                    else:
+                    except RuntimeError as e:
+                        print(f"CODE CRUSHED DUE TO THE FOLLOWING REASON: {e}")
+                        current_combination = dict(
+                            dataset_id=dataset_id,
+                            dropout_rate=dropout_rate,
+                            model_precision=model_precision,
+                            num_mcdropout_iterations=num_mcdropout_iterations,
+                            num_layers=num_layers,
+                        )
+                        print(f"SKIPPING CURRENT COMBINATION: {current_combination}")
+                        if error_handling == "ignore":
+                            continue
+                        else:
+                            raise e
+                    except OutputTypeError as e:
+                        print("CODE CRUSHED BECAUSE THERE IS A NEW PREDICTION TYPE")
+                        current_combination = dict(
+                            dataset_id=dataset_id,
+                            dropout_rate=dropout_rate,
+                            model_precision=model_precision,
+                            num_mcdropout_iterations=num_mcdropout_iterations,
+                            num_layers=num_layers,
+                        )
+                        print(f"FAULTY COMBINATION: {current_combination}")
                         raise e
-                except OutputTypeError as e:
-                    print("CODE CRUSHED BECAUSE THERE IS A NEW PREDICTION TYPE")
-                    current_combination = dict(
-                        dataset_id=dataset_id,
-                        dropout_rate=dropout_rate,
-                        model_precision=model_precision,
-                        num_mcdropout_iterations=num_mcdropout_iterations,
-                        num_layers=num_layers,
-                    )
-                    print(f"FAULTY COMBINATION: {current_combination}")
-                    raise e
             else:
                 continue
     else:
         warn('Error handling is set to "raise" for parallel processing.')
         Parallel(n_jobs=num_jobs, backend="loky")(
-            delayed(train)(
+            delayed(train_parallel)(
                 task_num=datasets_to_use[dataset_id],
                 dataset_id=dataset_id,
-                num_folds=num_crossval_folds,
+                num_inner_folds=num_crossval_folds,
                 results_path=results_path,
                 random_seed=random_seed,
+                outer_fold_idxs=...,
+                outer_fold_id=...,
                 experiment_args={
                     "dropout_rate": dropout_rate,
                     "alpha": model_precision,
@@ -230,6 +269,8 @@ def main():
                 train_args={"num_epochs": num_epochs},
                 num_jobs=num_jobs,
                 outlier_flag=outlier_only_flag,
+                outer_fold_idxs_s=outer_fold_idxs_s,
+                
             )
             for (
                 dataset_id,

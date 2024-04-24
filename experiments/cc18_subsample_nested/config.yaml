@@ -11,9 +11,11 @@ num_crossval_folds: 3
 # prediction_threshold: 0.5  # threshold for binary classification
 random_seed: 42
 layer_size: 200
-results_path: "./results_sklearn.nosync/"
+results_path: "./results_sklearn_nested.nosync/"
 subsample_path: "./subsampled_tasks.csv"
-num_jobs: 1 # will not actually work
+path_to_fold_info: "./additional.nosync/outer_folds_info.pth"
+num_jobs: -1 # will not actually work
+outlier_only_flag: False
 
 # HYPERPARAMETERS TO INVESTIGATE
 dropout_rate_s: [0.001, 0.05, 0.1, 0.5, 0.9]

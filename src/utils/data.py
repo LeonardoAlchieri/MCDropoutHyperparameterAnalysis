@@ -56,7 +56,7 @@ def get_dataset(task_num: int, outer_fold_idxs: list[int] | None = None) -> tupl
             f"Found prediction type {prediction_type}. Support are 'Supervised Classification' and 'Regression'."
         )
     
-    if outer_fold_idxs:
+    if outer_fold_idxs is not None:
         x = x[outer_fold_idxs]
         y = y[outer_fold_idxs]
     return x, y, name, prediction_type, num_classes
@@ -67,3 +67,15 @@ def load_dataset_subsample(file_path: str) -> list:
         dataset_subsample = [(line.strip()) for line in file]
 
     return dataset_subsample
+
+def get_outer_fold(
+    path: str,
+    fold_type: str = "train,"
+) -> dict[str, dict[int, list[int]]]:
+    outer_fold_info = torch.load(path, map_location=torch.device('cpu'))
+    return outer_fold_info[fold_type]
+    
+    
+    
+    
+    ...

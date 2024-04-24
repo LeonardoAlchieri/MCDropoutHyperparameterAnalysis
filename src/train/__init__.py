@@ -90,7 +90,7 @@ def perform_fold_prediction(
     val_mcc = matthews_corrcoef(y_val, y_pred)
 
     outlier_vals = calculate_outlier_info(x_val=x_val, random_seed=random_seed)
-    anomaly_vals = calculate_anonmaly_info(x_val=x_val, random_seed=random_seed)
+    anomaly_vals = calculate_anonmaly_info(x_val=x_val)
 
     return {
         "task_name": name,
@@ -166,15 +166,13 @@ def train(
     )
 
     inner_fold_results: list[dict] = []
-    inner_fold = 0
-    for train_index, val_index in tqdm(
-        kf.split(x, y),
+    for inner_fold, (train_index, val_index) in tqdm(
+        enumerate(kf.split(x, y)),
         desc="Folds",
         colour="magenta",
         total=num_inner_folds,
         disable=True,
     ):
-        inner_fold += 1
 
         x_train, x_val = x[train_index], x[val_index]
         y_train, y_val = y[train_index], y[val_index]
@@ -221,7 +219,7 @@ def train(
         inner_fold_results.append(inner_fold_result)
     # return inner_fold_results
 
-    if outer_fold_id:
+    if outer_fold_id is not None:
         output_filename: str = (
             f"task{dataset_id}_dropout_rate{experiment_args['dropout_rate']}_model_precision{experiment_args['alpha']}_num_mcdropout_iterations{experiment_args['mcdropout_num']}_num_layers{experiment_args['num_layers']}_outerfold{outer_fold_id}.pth"
         )
