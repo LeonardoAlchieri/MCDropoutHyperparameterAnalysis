@@ -46,9 +46,13 @@ error_handling = args.error_handling
 
 all_dataset_ranges = {
     "0": range(0, 4),
-    "1": range(4, 8),
+    "1a": range(4, 6),
+    "1b": range(6, 8),
     "2": range(8, 12),
-    "3": range(12, 16),
+    # "3": range(12, 16),
+    "3a": range(12, 14),
+    "3b": range(14, 15),
+    "3c": range(15, 16),
     "4": range(16, 18),
     "5": range(18, 20),
     "all": range(0, 20),
