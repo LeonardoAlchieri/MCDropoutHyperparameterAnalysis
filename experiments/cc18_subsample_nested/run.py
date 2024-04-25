@@ -53,7 +53,9 @@ all_dataset_ranges = {
     "3a": range(12, 14),
     "3b": range(14, 15),
     "3c": range(15, 16),
-    "4": range(16, 18),
+    # "4": range(16, 18),
+    "4a": range(16, 17),
+    "4b": range(17, 18),
     "5": range(18, 20),
     "all": range(0, 20),
     "test": [10],
@@ -160,7 +162,7 @@ def main():
 
     # the keys of outer_fold_idxs_s are the ids of the outer fold, used to check if
     # there is a previous experiment for that fold
-    outer_fold_idxs_s = get_outer_fold(path=path_to_fold_info, fold_type="train")
+    outer_fold_idxs_s = get_outer_fold(path=path_to_fold_info)
 
     if num_jobs == 1:
         for (
@@ -195,9 +197,9 @@ def main():
                 logger.info(
                     f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}."
                 )
-                for outer_fold_id, outer_fold_idxs in outer_fold_idxs_s[
+                for outer_fold_id, outer_fold_idxs_train_val in outer_fold_idxs_s[
                     datasets_to_use[dataset_id]
-                ].items():
+                ]["train"].items():
                     try:
                         train(
                             task_num=datasets_to_use[dataset_id],
@@ -205,8 +207,11 @@ def main():
                             num_inner_folds=num_crossval_folds,
                             results_path=results_path,
                             random_seed=random_seed,
-                            outer_fold_idxs=outer_fold_idxs,
+                            outer_fold_idxs_train_val=outer_fold_idxs_train_val,
                             outer_fold_id=outer_fold_id,
+                            outer_fold_idxs_test=outer_fold_idxs_s["test"][
+                                outer_fold_id
+                            ],
                             experiment_args={
                                 "dropout_rate": dropout_rate,
                                 "alpha": model_precision,
@@ -274,7 +279,6 @@ def main():
                 num_jobs=num_jobs,
                 outlier_flag=outlier_only_flag,
                 outer_fold_idxs_s=outer_fold_idxs_s,
-                
             )
             for (
                 dataset_id,

@@ -25,14 +25,14 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     return torch.tensor(encoded_labels, dtype=torch.float32), num_classes
 
 
-def get_dataset(task_num: int, outer_fold_idxs: list[int] | None = None) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
+def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
     task = openml.tasks.get_task(task_num)
     dataset_obj = task.get_dataset()
     dataset = dataset_obj.get_data()[0]
-    
+
     # drop nan
-    dataset = dataset.dropna(how='any')
+    dataset = dataset.dropna(how="any")
 
     x = dataset.drop(columns=[task.target_name])
     x = pd.get_dummies(x)
@@ -41,7 +41,7 @@ def get_dataset(task_num: int, outer_fold_idxs: list[int] | None = None) -> tupl
 
     y = dataset[task.target_name].to_numpy()
     y, num_classes = prepare_prediction_array(y)
-    
+
     name = dataset_obj.name
 
     prediction_type = task.task_type
@@ -55,10 +55,7 @@ def get_dataset(task_num: int, outer_fold_idxs: list[int] | None = None) -> tupl
         raise ValueError(
             f"Found prediction type {prediction_type}. Support are 'Supervised Classification' and 'Regression'."
         )
-    
-    if outer_fold_idxs is not None:
-        x = x[outer_fold_idxs]
-        y = y[outer_fold_idxs]
+
     return x, y, name, prediction_type, num_classes
 
 
@@ -68,14 +65,11 @@ def load_dataset_subsample(file_path: str) -> list:
 
     return dataset_subsample
 
+
 def get_outer_fold(
     path: str,
-    fold_type: str = "train,"
-) -> dict[str, dict[int, list[int]]]:
-    outer_fold_info = torch.load(path, map_location=torch.device('cpu'))
-    return outer_fold_info[fold_type]
-    
-    
-    
-    
+) -> dict[str, dict[str, dict[int, list[int]]]]:
+    outer_fold_info = torch.load(path, map_location=torch.device("cpu"))
+    return outer_fold_info
+
     ...
