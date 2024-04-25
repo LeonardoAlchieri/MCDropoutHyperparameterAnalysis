@@ -1,0 +1,4 @@
+
+path_to_mlp_results: "./results_sklearn_nested_complete.nosync/"
+path_to_save_data: "./results_sklearn_nested_complete.nosync/uncertainties.csv"
+num_jobs: -1 # will not actually work
