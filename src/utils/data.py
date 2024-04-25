@@ -69,7 +69,7 @@ def load_dataset_subsample(file_path: str) -> list:
 def get_outer_fold(
     path: str,
 ) -> dict[str, dict[str, dict[int, list[int]]]]:
-    outer_fold_info = torch.load(path, map_location=torch.device("cpu"))
+    outer_fold_info =torch.load(path, map_location=torch.device("cpu"))
     return outer_fold_info
 
     ...

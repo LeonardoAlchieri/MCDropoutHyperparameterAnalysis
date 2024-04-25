@@ -198,8 +198,8 @@ def main():
                     f"Running experiment with combination {(dataset_id,dropout_rate,model_precision,num_mcdropout_iterations,num_layers)}."
                 )
                 for outer_fold_id, outer_fold_idxs_train_val in outer_fold_idxs_s[
-                    datasets_to_use[dataset_id]
-                ]["train"].items():
+                    "train"
+                ][datasets_to_use[dataset_id]].items():
                     try:
                         train(
                             task_num=datasets_to_use[dataset_id],
@@ -210,8 +210,8 @@ def main():
                             outer_fold_idxs_train_val=outer_fold_idxs_train_val,
                             outer_fold_id=outer_fold_id,
                             outer_fold_idxs_test=outer_fold_idxs_s["test"][
-                                outer_fold_id
-                            ],
+                                datasets_to_use[dataset_id]
+                            ][outer_fold_id],
                             experiment_args={
                                 "dropout_rate": dropout_rate,
                                 "alpha": model_precision,
