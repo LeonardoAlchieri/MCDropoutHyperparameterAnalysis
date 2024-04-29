@@ -1,0 +1,8 @@
+dataset_measures_path: "./dataset_measures.nosync/"
+uncertainties_path: "./results_sklearn_nested_complete.nosync/"
+symbolic_regression_args:
+  n_iterations: 100
+  n_population: 15
+  path_to_save: "results_sklearn_nested_complete.nosync/"
+  random_state: 42
+  num_jobs: 8

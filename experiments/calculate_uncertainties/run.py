@@ -70,34 +70,34 @@ def custom_mutual_information_formula(
     return average_entropy - entropies
 
 
-def calcualte_uncertainties(df: pd.DataFrame) -> pd.DataFrame:
+def calcualte_uncertainties(df: pd.DataFrame, validation: bool = True) -> pd.DataFrame:
     if len(df) > 1:
         raise ValueError("More than one result in the group. This should not happen.")
 
-    
-    val_predictions = df["y_val_preds_proba"].iloc[0]
-    val_entropies = custom_entropy_formula(val_predictions)
-    val_variational_ratios = custom_variational_ratios_formula(val_predictions)
-    val_mutual_informations = custom_mutual_information_formula(val_predictions, val_entropies)
-    
-    test_predictions = df["y_test_preds_proba"].iloc[0]
-    test_entropies = custom_entropy_formula(test_predictions)
-    test_variational_ratios = custom_variational_ratios_formula(test_predictions)
-    test_mutual_informations = custom_mutual_information_formula(test_predictions, test_entropies)
-    
+    if validation:
+        predictions = df["y_val_preds_proba"].iloc[0]
+    else:
+        predictions = df["y_test_preds_proba"].iloc[0]
+    entropies = custom_entropy_formula(predictions)
+    # variational_ratios = custom_variational_ratios_formula(predictions)
+    mutual_informations = custom_mutual_information_formula(predictions, entropies)
+
     return pd.DataFrame.from_dict(
         {
-            "val_entropies": val_entropies,
-            "test_entropies": test_entropies,
-            "val_variational_ratios": val_variational_ratios[0],
-            "test_variational_ratios": test_variational_ratios[0],
-            "val_mutual_informations": val_mutual_informations,
-            "test_mutual_informations": test_mutual_informations,
-            # "y_val_preds_proba": df['y_val_preds_proba'].values[0],
-            "val_outlier_vals": df["val_outlier_vals"].values[0],
-            "test_outlier_vals": df["test_outlier_vals"].values[0],
-            "test_anomaly_vals": df["test_anomaly_vals_test"].values[0],
-            "test_anomaly_vals": df["test_anomaly_vals_test"].values[0],
+            "entropies": entropies,
+            # "variational_ratios": variational_ratios[0],
+            "mutual_informations": mutual_informations,
+            # "y_preds_proba": df['y_preds_proba'].values[0],
+            "outlier_vals": (
+                df["val_outlier_vals"].values[0]
+                if validation
+                else df["test_outlier_vals"].values[0]
+            ),
+            "anomaly_vals": (
+                df["val_anomaly_vals_test"].values[0]
+                if validation
+                else df["test_anomaly_vals_test"].values[0]
+            ),
         },
         orient="index",
     ).T
@@ -118,15 +118,16 @@ def main():
 
     configs: dict[str, Any] = load_config(path=path_to_config)
     path_to_mlp_results = configs["path_to_mlp_results"]
-    path_to_save_data = configs["path_to_save_data"]
+    path_to_save_validation_data: str = configs["path_to_save_validation_data"]
+    path_to_save_test_data: str = configs["path_to_save_test_data"]
     n_jobs = configs["num_jobs"]
-    
+
     # pandarallel.initialize(progress_bar=True, nb_workers=8)
     tqdm.pandas()
 
     all_results_path = glob(path_to_mlp_results + "*.pth")
 
-    all_results_all_folds = Parallel(n_jobs=n_jobs, backend='loky')(
+    all_results_all_folds = Parallel(n_jobs=n_jobs, backend="loky")(
         delayed(prepare_dict_for_regression)(path, 1)
         for path in tqdm(all_results_path, total=len(all_results_path))
     )
@@ -188,7 +189,7 @@ def main():
     all_results.index.names = ["outer_fold", "inner_fold", "idx"]
     all_results = all_results.reset_index(drop=False, inplace=False)
 
-    uncertainties_results: pd.DataFrame = all_results.groupby(
+    val_uncertainties_results: pd.DataFrame = all_results.groupby(
         [
             "outer_fold",
             "inner_fold",
@@ -200,9 +201,24 @@ def main():
             "dropout_rate",
             "output_size",
         ]
-    ).progress_apply(calcualte_uncertainties)
+    ).progress_apply(calcualte_uncertainties, validation=True)
 
-    uncertainties_results.to_csv(path_to_save_data)
+    test_uncertainties_results: pd.DataFrame = all_results.groupby(
+        [
+            "outer_fold",
+            "inner_fold",
+            "task_name",
+            "task_num",
+            "alpha",
+            "mcdropout_num",
+            "num_layers",
+            "dropout_rate",
+            "output_size",
+        ]
+    ).progress_apply(calcualte_uncertainties, validation=False)
+
+    val_uncertainties_results.to_csv(path_to_save_validation_data)
+    test_uncertainties_results.to_csv(path_to_save_test_data)
 
 
 if __name__ == "__main__":
