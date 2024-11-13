@@ -10,10 +10,12 @@ import pandas as pd
 import torch
 from tqdm.auto import tqdm
 from pysr import PySRRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.utils.validation import _is_fitted
 
 path.append("./")
 
-from src.utils.io import load_config
+from src.utils.io import load_config, load_dataset_measures, load_prepare_uncertainties
 
 logger = getLogger("run")
 
@@ -24,72 +26,6 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def load_dataset_measures(path: str) -> pd.DataFrame:
-    all_dataset_measures_paths = glob(os.path.join(path, "*.pth"))
-
-    dataset_measures = [
-        torch.load(path, map_location=torch.device("cpu"))
-        for path in tqdm(all_dataset_measures_paths)
-    ]
-    dataset_measures = pd.DataFrame.from_dict(dataset_measures)
-    dataset_measures = dataset_measures.set_index("task_name")
-    dataset_measures = dataset_measures[
-        [
-            "dimensionality",
-            "intrinsic_dim",
-            "intrinsic_dim_ratio",
-            "feature_noise",
-            "levene_stat_avg",
-            "levene_pval_avg",
-            "levene_success_ratio",
-            "fcc_mean",
-            "skew_mean",
-            "kurtosis_mean",
-            "mi_mean",
-            "imbalance_ratio",
-        ]
-    ]
-    return dataset_measures
-
-
-def add_dataset_measures_to_uncertainties(
-    dataset_measures: pd.DataFrame, uncertainties_df: pd.DataFrame
-) -> pd.DataFrame:
-    for col in tqdm(dataset_measures.columns, desc="Measure progress"):
-        # uncertainties_results[col] = uncertainties_results['task_name'].parallel_apply(lambda x: dataset_measures.loc[x, col])
-        uncertainties_df[col] = None
-        for task_name in tqdm(
-            uncertainties_df["task_name"].unique(),
-            desc="Dataset progress",
-            disable=True,
-        ):
-            uncertainties_df.loc[uncertainties_df["task_name"] == task_name, col] = (
-                dataset_measures.loc[task_name, col]
-            )
-
-    return uncertainties_df
-
-
-def load_prepare_uncertainties(
-    path: str, dataset_measures: pd.DataFrame
-) -> dict[str, pd.DataFrame]:
-    uncertainties_path: list[str] = glob(os.path.join(path, "uncertainties_*.csv"))
-
-    uncertainties: dict[str, pd.DataFrame] = {
-        path.split("/")[-1].split("_")[-1].split(".")[0]: pd.read_csv(path)
-        for path in uncertainties_path
-    }
-
-    uncertainties = {
-        key: add_dataset_measures_to_uncertainties(
-            dataset_measures=dataset_measures, uncertainties_df=uncertainties_df
-        )
-        for key, uncertainties_df in uncertainties.items()
-    }
-
-    return uncertainties
-
-
 def prepare_symbolic_regression_model(
     outer_fold: int,
     n_iterations: int,
@@ -98,6 +34,12 @@ def prepare_symbolic_regression_model(
     random_state: int = 42,
     num_jobs: int = -1,
 ) -> PySRRegressor:
+
+    save_directory: str = f"./temp_equation_files.nosync/outer_fold_{outer_fold}/"
+    if not os.path.exists(save_directory):
+        warn(f"Creating directory {save_directory}, since it did not exist.")
+        os.makedirs(save_directory)
+
     return PySRRegressor(
         niterations=n_iterations,  # < Increase me for better results
         populations=n_population,
@@ -120,9 +62,10 @@ def prepare_symbolic_regression_model(
         multithreading=True,
         batching=True,
         temp_equation_file=True,
-        tempdir="./temp_equation_files.nosync",
-        delete_tempfiles=True,
-        equation_file=os.path.join(path_to_save, f"equation_{outer_fold}.csv"),
+        tempdir=save_directory,
+        delete_tempfiles=False,
+        turbo=True,
+        # equation_file=os.path.join(path_to_save, f"equation_{outer_fold}.csv"),
     )
 
 
@@ -174,14 +117,31 @@ def train_test_symbolic_regression(
     y_test = uncertainties["test"][uncertainties["test"]["outer_fold"] == outer_fold][
         "entropies"
     ]
-
-    model.fit(x_train, y_train)
+    if not _is_fitted(model, attributes=["equations_"]):
+        model.fit(x_train, y_train)
+    else:
+        raise NotImplementedError(
+            """
+                                  Model is already fitted, but I have not implemented\
+                                    loading a pre-trained model. Something must have\
+                                        gone wrong.
+                                  """
+        )
 
     # get train loss
-    train_loss = model.score(x_train, y_train)
-    test_loss = model.score(x_test, y_test)
+    train_r2 = model.score(x_train, y_train)
+    test_r2 = model.score(x_test, y_test)
 
-    return {"train_loss": train_loss, "test_loss": test_loss, "outer_fold": outer_fold}
+    train_mse = mean_squared_error(y_train, model.predict(x_train))
+    test_mse = mean_squared_error(y_test, model.predict(x_test))
+
+    return {
+        "train_r2": train_r2,
+        "test_r2": test_r2,
+        "train_mse": train_mse,
+        "test_mse": test_mse,
+        "outer_fold": outer_fold,
+    }
 
 
 def main():
@@ -212,7 +172,7 @@ def main():
     num_folds = get_outer_fold_num(uncertainties=uncertainties)
 
     if debug_mode:
-        ("Debug mode is on, using only 10\% of the data")
+        print("Debug mode is on, using only 10%% of the data")
         uncertainties = {
             key: value.sample(frac=0.1, random_state=42)
             for key, value in uncertainties.items()
@@ -224,6 +184,9 @@ def main():
             outer_fold=outer_fold, **symbolic_regression_args
         )
 
+        # TODO: I should save the symbolic regression "best result", as well as
+        # a feature importance map — I thought I did it. Basically, a list of
+        # how many times a feature appears in the symbolic regression task
         fold_result = train_test_symbolic_regression(
             model=model, uncertainties=uncertainties, outer_fold=outer_fold
         )

@@ -1,0 +1,28 @@
+name_experiment: "bigger model (no log likelihood)"
+regression_data_filename: "regression_data"
+regression_data_with_equations_filename: "regression_data_with_equations"
+dropouts:
+  - 0.0001
+  - 0.001
+  - 0.01
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.5
+  - 0.7
+  - 0.9
+num_mcdropout: 100000
+num_epochs: 600
+batch_sizes: 16
+l2:  0.0000001
+alpha: 0.0005
+model_args: 
+  layer_size: 64
+  hidden_activation: 'relu'
+  num_layers: 4
+  dropout_input: True
+symbolic_regression_variables:
+  - "K"
+  - "y_mean"
+  - "p"
+  # - "log likelihood"

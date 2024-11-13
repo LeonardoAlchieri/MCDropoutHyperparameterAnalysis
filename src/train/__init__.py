@@ -1,24 +1,24 @@
-import torch
 import os
+from warnings import warn
+
+import numpy as np
+import torch
 
 # import dataset and dataloader for pytoarch
 import torch.utils.data
-import numpy as np
-from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
-from tqdm.auto import tqdm
-from scipy.stats import mode, entropy
-
-
-from src.utils.data import get_dataset
-from src.model.sklearn import MLPDropout
-from src.utils import OutputTypeError
-
-from sklearn.utils._testing import ignore_warnings
-from sklearn.exceptions import ConvergenceWarning
+from scipy.stats import entropy, mode
 from sklearn.ensemble import IsolationForest
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
+from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.utils._testing import ignore_warnings
+from tqdm.auto import tqdm
+
+from src.model.sklearn import MLPDropoutClassifier, MLPDropoutRegressor
+from src.utils import OutputTypeError
+from src.utils.data import get_dataset
 
 
 def calculate_outlier_info(x: np.ndarray, random_seed: int = 42) -> np.ndarray:
@@ -36,13 +36,15 @@ def calculate_anonmaly_info(x: np.ndarray) -> np.ndarray:
 
 
 def get_prediction_metrics(
-    classifier: MLPDropout,
+    classifier: MLPDropoutClassifier,
     x: np.ndarray,
     y: np.ndarray,
     task_type: str,
     experiment_args: dict,
     random_seed: int = 42,
 ):
+    # FIXME: figure out what to do when the task is a regression. I should be calculating regression
+    # values here
     y_preds_proba = [
         classifier.predict_proba(x) for _ in range(experiment_args["mcdropout_num"])
     ]
@@ -86,87 +88,113 @@ def perform_fold_prediction(
     x_test: np.ndarray | None = None,
     y_test: np.ndarray | None = None,
     random_seed: int = 42,
+    batch_size: int = 200,
     num_jobs: int = -1,
 ):
-
-    classifier = MLPDropout(
-        random_state=random_seed,
-        max_iter=train_args["num_epochs"],
-        alpha=experiment_args["alpha"],
-        hidden_layer_sizes=tuple(
-            model_args["layer_size"] for _ in range(experiment_args["num_layers"])
-        ),
-        dropout=experiment_args["dropout_rate"],
-        mcdropout=True,
-        activation=model_args.get("hidden_activation_type", None),
-        # num_jobs=num_jobs,
-    )
+    if task_type == "classification":
+        raise NotImplementedError(
+            "Classification has to be double checked. Do not try to run now"
+        )
+        classifier = MLPDropoutClassifier(
+            random_state=random_seed,
+            max_iter=train_args["num_epochs"],
+            alpha=experiment_args["alpha"],
+            hidden_layer_sizes=tuple(
+                model_args["layer_size"] for _ in range(experiment_args["num_layers"])
+            ),
+            dropout=experiment_args["dropout_rate"],
+            mcdropout=True,
+            activation=model_args.get("hidden_activation_type", None),
+            # num_jobs=num_jobs,
+        )
+        # classifier.fit(x_train, y_train)
+        # (
+        #     val_accuracy,
+        #     val_f1,
+        #     val_mcc,
+        #     y_val_preds_proba,
+        #     val_outlier_vals,
+        #     val_anomaly_vals_test,
+        # ) = get_prediction_metrics(
+        #     classifier=classifier,
+        #     x=x_val,
+        #     y=y_val,
+        #     task_type=task_type,
+        #     experiment_args=experiment_args,
+        #     random_seed=random_seed,
+        # )
+        # if x_test is not None and y_test is not None:
+        #     (
+        #         test_accuracy,
+        #         test_f1,
+        #         test_mcc,
+        #         y_test_preds_proba,
+        #         test_outlier_vals,
+        #         test_anomaly_vals_test,
+        #     ) = get_prediction_metrics(
+        #         classifier=classifier,
+        #         x=x_test,
+        #         y=y_test,
+        #         task_type=task_type,
+        #         experiment_args=experiment_args,
+        #         random_seed=random_seed,
+        #     )
+        #     return {
+        #         "task_name": name,
+        #         "task_type": task_type,
+        #         "output_size": output_size,
+        #         "val_accuracy": val_accuracy,
+        #         "val_f1": val_f1,
+        #         "val_mcc": val_mcc,
+        #         "y_val_preds_proba": y_val_preds_proba,
+        #         "val_outlier_vals": val_outlier_vals,
+        #         "val_anomaly_vals_test": val_anomaly_vals_test,
+        #         "test_accuracy": test_accuracy,
+        #         "test_f1": test_f1,
+        #         "test_mcc": test_mcc,
+        #         "y_test_preds_proba": y_test_preds_proba,
+        #         "test_outlier_vals": test_outlier_vals,
+        #         "test_anomaly_vals_test": test_anomaly_vals_test,
+        #         # "entropies": entropies,
+        #     }
+        # else:
+        #     return {
+        #         "task_name": name,
+        #         "task_type": task_type,
+        #         "output_size": output_size,
+        #         "val_accuracy": val_accuracy,
+        #         "val_f1": val_f1,
+        #         "val_mcc": val_mcc,
+        #         "y_val_preds_proba": y_val_preds_proba,
+        #         "val_outlier_vals": val_outlier_vals,
+        #         "val_anomaly_vals_test": val_anomaly_vals_test,
+        #         # "entropies": entropies,
+        #     }
+    elif task_type == "regression":
+        classifier = MLPDropoutRegressor(
+            random_state=random_seed,
+            max_iter=train_args["num_epochs"],
+            alpha=experiment_args["alpha"],
+            hidden_layer_sizes=tuple(
+                model_args["layer_size"] for _ in range(experiment_args["num_layers"])
+            ),
+            dropout=experiment_args["dropout_rate"],
+            mcdropout=True,
+            batch_size=batch_size,
+            dropout_input=experiment_args.get("dropout_input", False),
+            activation=model_args.get("hidden_activation_type", None),
+            # epsilon = 1e-8,
+            n_iter_no_change=train_args["num_epochs"],
+            early_stopping=True,
+            validation_fraction=0.1,
+            # num_jobs=num_jobs,
+        )
 
     classifier.fit(x_train, y_train)
-
-    (
-        val_accuracy,
-        val_f1,
-        val_mcc,
-        y_val_preds_proba,
-        val_outlier_vals,
-        val_anomaly_vals_test,
-    ) = get_prediction_metrics(
-        classifier=classifier,
-        x=x_val,
-        y=y_val,
-        task_type=task_type,
-        experiment_args=experiment_args,
-        random_seed=random_seed,
-    )
-
-    if x_test is not None and y_test is not None:
-        (
-            test_accuracy,
-            test_f1,
-            test_mcc,
-            y_test_preds_proba,
-            test_outlier_vals,
-            test_anomaly_vals_test,
-        ) = get_prediction_metrics(
-            classifier=classifier,
-            x=x_test,
-            y=y_test,
-            task_type=task_type,
-            experiment_args=experiment_args,
-            random_seed=random_seed,
-        )
-        return {
-            "task_name": name,
-            "task_type": task_type,
-            "output_size": output_size,
-            "val_accuracy": val_accuracy,
-            "val_f1": val_f1,
-            "val_mcc": val_mcc,
-            "y_val_preds_proba": y_val_preds_proba,
-            "val_outlier_vals": val_outlier_vals,
-            "val_anomaly_vals_test": val_anomaly_vals_test,
-            "test_accuracy": test_accuracy,
-            "test_f1": test_f1,
-            "test_mcc": test_mcc,
-            "y_test_preds_proba": y_test_preds_proba,
-            "test_outlier_vals": test_outlier_vals,
-            "test_anomaly_vals_test": test_anomaly_vals_test,
-            # "entropies": entropies,
-        }
-    else:
-        return {
-            "task_name": name,
-            "task_type": task_type,
-            "output_size": output_size,
-            "val_accuracy": val_accuracy,
-            "val_f1": val_f1,
-            "val_mcc": val_mcc,
-            "y_val_preds_proba": y_val_preds_proba,
-            "val_outlier_vals": val_outlier_vals,
-            "val_anomaly_vals_test": val_anomaly_vals_test,
-            # "entropies": entropies,
-        }
+    # warn(
+    #     "METHOD NOT FINISHED TO IMPLEMENT. PLEASE CALCULATE PREDICTION METRICS FOR REGRESSION."
+    # )
+    return classifier
 
 
 @ignore_warnings(category=ConvergenceWarning)
@@ -318,3 +346,50 @@ def train(
     # save list of dicts to json
     # TODO: find a better schema. Probably not a good idea to save everything at the end.
     torch.save(inner_fold_results, os.path.join(results_path, output_filename))
+
+
+def run_dropout_estimation(fn_input):
+    dataset, K, y_mean, p, num_mcdropout, num_epochs, batch_sizes, alpha, model_args = (
+        fn_input
+    )
+    # TODO: implement early stopping using val set
+    classifier = perform_fold_prediction(
+        x_train=dataset["train"][0].astype("float32"),
+        y_train=dataset["train"][1].astype("float32"),
+        x_val=dataset["val"][0],
+        y_val=dataset["val"][1],
+        name=(0, 0),
+        task_type="regression",
+        output_size=1,
+        model_args={
+            "layer_size": model_args["layer_size"],
+            "hidden_activation_type": model_args["hidden_activation"],
+        },
+        train_args={"num_epochs": num_epochs},
+        experiment_args={
+            "alpha": alpha,
+            "num_layers": model_args['num_layers'],
+            "dropout_rate": p,
+            "dropout_input": model_args['dropout_input'],
+        },
+        x_test=dataset["test"][0],
+        y_test=dataset["test"][1],
+        random_seed=42,
+        batch_size=batch_sizes,
+    )
+
+    mc_predictions = {
+        test_set: np.asarray(
+            [
+                # NOTE: The predictions are all the same, so I just have to repeat them
+                np.repeat(
+                    classifier._predict(dataset[test_set][0][[0]]),
+                    len(dataset[test_set][0]),
+                )
+                # classifier._predict(dataset[test_set][0][[0]])
+                for _ in tqdm(range(num_mcdropout), disable=True)
+            ]
+        )
+        for test_set in ["val", "test"]
+    }
+    return (K, y_mean, p, mc_predictions)

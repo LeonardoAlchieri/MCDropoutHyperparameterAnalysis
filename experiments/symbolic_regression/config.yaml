@@ -1,8 +1,9 @@
 dataset_measures_path: "./dataset_measures.nosync/"
 uncertainties_path: "./results_sklearn_nested_complete.nosync/"
+# path_to_fitted_model: "./results_sklearn_nested_complete.nosync/"
 symbolic_regression_args:
-  n_iterations: 100
-  n_population: 15
-  path_to_save: "results_sklearn_nested_complete.nosync/"
+  n_iterations: 500
+  n_population: 88
+  path_to_save: "experiments/symbolic_regression/results.nosync"
   random_state: 42
   num_jobs: 8
