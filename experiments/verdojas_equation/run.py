@@ -259,14 +259,25 @@ def get_data_for_regression(
 
     
     if alternative_path_to_saved_data:
+        # NOTE: it's not clear why we need the "with equations" filepath, since
+        # at this stage, we are not interested in the equations we may have computed
         alternative_path_to_saved_data_val = os.path.join(
             alternative_path_to_saved_data,
-            f"{regression_data_with_equations_filename}_val.csv",
+            f"{regression_data_filename}_val.csv",
         )
         alternative_path_to_saved_data_test = os.path.join(
             alternative_path_to_saved_data,
-            f"{regression_data_with_equations_filename}_test.csv",
+            f"{regression_data_filename}_test.csv",
         )
+        
+        # alternative_path_to_saved_data_val = os.path.join(
+        #     alternative_path_to_saved_data,
+        #     f"{regression_data_with_equations_filename}_val.csv",
+        # )
+        # alternative_path_to_saved_data_test = os.path.join(
+        #     alternative_path_to_saved_data,
+        #     f"{regression_data_with_equations_filename}_test.csv",
+        # )
 
     # dataset_measures_path: str = "./dataset_measures.nosync/"
 
@@ -299,6 +310,9 @@ def get_data_for_regression(
             regression_data_test = pd.read_csv(
                 alternative_path_to_saved_data_test, index_col=0
             )
+            print("Removing 'our formula' column from this loaded data")
+            regression_data_val.drop(columns=["our_formula"], inplace=True)
+            regression_data_test.drop(columns=["our_formula"], inplace=True)
         regression_data_val.to_csv(regression_data_savepath_val)
         regression_data_test.to_csv(regression_data_savepath_test)
     else:
@@ -334,6 +348,7 @@ def main():
     symbolic_regression_variables: list[str] = configs["symbolic_regression_variables"]
     symoblic_regression_params: dict[str, Any] = configs["symoblic_regression_params"]
     recreate_data: bool = configs["recreate_data"]
+    avoid_symbolic_regression: bool = configs.get("avoid_symbolic_regression", False)
 
     alternative_path_to_saved_data: str | None = configs.get(
         "alternative_path_to_saved_data", None
@@ -378,31 +393,31 @@ def main():
     regression_data_test_with_equations_savepath: str = os.path.join(
         base_savepath, f"{regression_data_with_equations_filename}_test.csv"
     )
+    if not avoid_symbolic_regression:
+        model = prepare_symbolic_regression_model(
+            n_iterations=symoblic_regression_params["n_iterations"],
+            n_population=symoblic_regression_params["n_population"],
+        )
+        model.fit(
+            regression_data_val[symbolic_regression_variables].values,
+            regression_data_val[["variance"]].values,
+        )
+        # print best pysr formula to a file
+        model.equations.to_csv(os.path.join(base_savepath, "all_formulas.csv"), index=False)
+        model.get_best().to_csv(os.path.join(base_savepath, "best_formula.csv"), index=True)
+        regression_data_val = add_equation_estimates_to_data(
+            regression_data_val,
+            model,
+            symbolic_regression_variables=symbolic_regression_variables,
+        )
+        regression_data_test = add_equation_estimates_to_data(
+            regression_data_test,
+            model,
+            symbolic_regression_variables=symbolic_regression_variables,
+        )
 
-    model = prepare_symbolic_regression_model(
-        n_iterations=symoblic_regression_params["n_iterations"],
-        n_population=symoblic_regression_params["n_population"],
-    )
-    model.fit(
-        regression_data_val[symbolic_regression_variables].values,
-        regression_data_val[["variance"]].values,
-    )
-    # print best pysr formula to a file
-    model.equations.to_csv(os.path.join(base_savepath, "all_formulas.csv"), index=False)
-    model.get_best().to_csv(os.path.join(base_savepath, "best_formula.csv"), index=True)
-    regression_data_val = add_equation_estimates_to_data(
-        regression_data_val,
-        model,
-        symbolic_regression_variables=symbolic_regression_variables,
-    )
-    regression_data_test = add_equation_estimates_to_data(
-        regression_data_test,
-        model,
-        symbolic_regression_variables=symbolic_regression_variables,
-    )
-
-    regression_data_val.to_csv(regression_data_val_with_equations_savepath)
-    regression_data_test.to_csv(regression_data_test_with_equations_savepath)
+        regression_data_val.to_csv(regression_data_val_with_equations_savepath)
+        regression_data_test.to_csv(regression_data_test_with_equations_savepath)
 
 
 if __name__ == "__main__":

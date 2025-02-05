@@ -1,5 +1,5 @@
 """This script allows to train a specific symbolic regression for each 
-combination of K and y_mean.
+combination of y_mean (but can be implemented with any other variable).
 """
 
 import argparse
@@ -75,8 +75,8 @@ def personalized_fit(
                 symbolic_regression_variables=symbolic_regression_variables,
             )
 
-            subset_data_val.to_csv(f"{regression_data_val_with_equations_savepath}_{variable_value}.csv")
-            subset_data_test.to_csv(f"{regression_data_test_with_equations_savepath}_{variable_value}.csv")
+            subset_data_val.to_csv(f"{regression_data_val_with_equations_savepath}_{variable_to_personalize}={variable_value}.csv")
+            subset_data_test.to_csv(f"{regression_data_test_with_equations_savepath}_{variable_to_personalize}={variable_value}.csv")
             
             subsets_data_val.append(subset_data_val)
             subsets_data_test.append(subset_data_test)
@@ -109,6 +109,7 @@ def main():
     symbolic_regression_variables: list[str] = configs["symbolic_regression_variables"]
     symoblic_regression_params: dict[str, Any] = configs["symoblic_regression_params"]
     recreate_data: bool = configs["recreate_data"]
+    variables_to_personalize: list[str] = configs["variables_to_personalize"]
 
     alternative_path_to_saved_data: str | None = configs.get(
         "alternative_path_to_saved_data", None
@@ -158,7 +159,7 @@ def main():
 
     regression_data_val, regression_data_test = personalized_fit(
         model=model,
-        variables_to_personalize=["K", "y_mean"],
+        variables_to_personalize=variables_to_personalize,
         symbolic_regression_variables=symbolic_regression_variables,
         data_val=regression_data_val,
         data_test=regression_data_test,
@@ -166,8 +167,8 @@ def main():
         regression_data_val_with_equations_savepath=regression_data_val_with_equations_savepath,
         regression_data_test_with_equations_savepath=regression_data_test_with_equations_savepath,
     )
-    regression_data_val.to_csv(regression_data_val_with_equations_savepath)
-    regression_data_test.to_csv(regression_data_test_with_equations_savepath)
+    regression_data_val.to_csv(f"{regression_data_val_with_equations_savepath}.csv")
+    regression_data_test.to_csv(f"{regression_data_test_with_equations_savepath}.csv")
 
 
 if __name__ == "__main__":

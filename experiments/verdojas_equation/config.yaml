@@ -1,7 +1,7 @@
-name_experiment: "0 layer model (no log likelihood)"
-alternative_path_to_saved_data: "/Users/leonardoalchieri/Desktop/GIT/MCDropoutHyperparameterAnalysis/experiments/verdojas_equation/results.nosync/0_layer_final"
-regression_data_filename: "regression_data"
-regression_data_with_equations_filename: "regression_data_with_equations"
+name_experiment: "0 layer model (num mcdropout 3)"
+# alternative_path_to_saved_data: "/Users/leonardoalchieri/Desktop/GIT/MCDropoutHyperparameterAnalysis/experiments/verdojas_equation/results_personalized.nosync/0_layer"
+regression_data_filename: "regression_data_num_mcdropout_3"
+regression_data_with_equations_filename: "regression_data_num_mcdropout_3_with_equations"
 dropouts:
   - 0.0001
   - 0.001
@@ -13,20 +13,20 @@ dropouts:
   - 0.7
   - 0.9
 dim_input_data:
-  - 5
-  - 10
-  - 100
+  # - 5
+  # - 10
+  # - 100
   - 500
-  - 1000
-  - 5000
+  # - 1000
+  # - 5000
   # - 10000
   # - 20000
 val_y_mean:
-  - 1
-  - 10
+  # - 1
+  # - 10
   - 100
-  - 1000
-num_mcdropout: 100000
+  # - 1000
+num_mcdropout: 3
 num_epochs: 600
 batch_sizes: 16
 l2:  0.0000001
@@ -47,3 +47,4 @@ symoblic_regression_params:
 recreate_data: False
 variables_to_personalize:
   - "y_mean"
+avoid_symbolic_regression: True # set to True if you want to avoid symbolic regression
