@@ -4,6 +4,7 @@ import pandas as pd
 from numpy import ndarray
 from sklearn.preprocessing import LabelEncoder
 from src.utils import OutputTypeError
+from sklearn.utils._testing import ignore_warnings
 
 
 def prepare_prediction_array(y: ndarray) -> torch.Tensor:
@@ -24,7 +25,7 @@ def prepare_prediction_array(y: ndarray) -> torch.Tensor:
     #     class_array_one_hot = class_array_one_hot[:, 1].unsqueeze(1)
     return torch.tensor(encoded_labels, dtype=torch.float32), num_classes
 
-
+@ignore_warnings(category=FutureWarning)
 def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, int]:
     # 99 is the ID of the OpenML-CC18 study
     task = openml.tasks.get_task(task_num)
