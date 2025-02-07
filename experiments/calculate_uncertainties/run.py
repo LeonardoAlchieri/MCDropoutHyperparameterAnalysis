@@ -4,7 +4,7 @@ from gc import collect as pick_up_trash
 from glob import glob
 from logging import INFO, basicConfig, getLogger
 from sys import path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -70,14 +70,9 @@ def custom_mutual_information_formula(
     return average_entropy - entropies
 
 
-def calcualte_uncertainties(df: pd.DataFrame, validation: bool = True) -> pd.DataFrame:
-    if len(df) > 1:
-        raise ValueError("More than one result in the group. This should not happen.")
-
-    if validation:
-        predictions = df["y_val_preds_proba"].iloc[0]
-    else:
-        predictions = df["y_test_preds_proba"].iloc[0]
+def calculate_classification_uncertainties(
+    df: pd.DataFrame, predictions: np.ndarray, validation: bool = True
+) -> pd.DataFrame:
     entropies = custom_entropy_formula(predictions)
     # variational_ratios = custom_variational_ratios_formula(predictions)
     mutual_informations = custom_mutual_information_formula(predictions, entropies)
@@ -103,6 +98,53 @@ def calcualte_uncertainties(df: pd.DataFrame, validation: bool = True) -> pd.Dat
     ).T
 
 
+def calculate_regression_uncertainties(
+    df: pd.DataFrame, predictions: np.ndarray, validation: bool = True
+) -> pd.DataFrame:
+    variances = np.var(predictions, axis=0)
+    return pd.DataFrame.from_dict(
+        {
+            "variances": variances,
+            "outlier_vals": (
+                df["val_outlier_vals"].values[0]
+                if validation
+                else df["test_outlier_vals"].values[0]
+            ),
+            "anomaly_vals": (
+                df["val_anomaly_vals_test"].values[0]
+                if validation
+                else df["test_anomaly_vals_test"].values[0]
+            ),
+        },
+        orient="index",
+    ).T
+
+
+def calculate_uncertainties(
+    df: pd.DataFrame,
+    validation: bool = True,
+) -> pd.DataFrame:
+    if len(df) > 1:
+        raise ValueError("More than one result in the group. This should not happen.")
+    
+    task: Literal["classification", "regression"] = df["task_type"].iloc[0]
+
+    if task == "classification":
+        pred_name: str = "y_val_preds_proba" if validation else "y_test_preds_proba"
+    elif task == "regression":
+        pred_name: str = "y_val_preds" if validation else "y_test_preds"
+    else:
+        raise OutputTypeError("task", task, ["classification", "regression"])
+
+    predictions = df[pred_name].iloc[0]
+
+    return (
+        calculate_classification_uncertainties(df, predictions, validation)
+        if task == "classification"
+        else calculate_regression_uncertainties(df, predictions, validation)
+    )
+
+
 def main():
 
     path_to_script_folder: str = os.path.dirname(os.path.abspath(__file__))
@@ -118,8 +160,8 @@ def main():
 
     configs: dict[str, Any] = load_config(path=path_to_config)
     path_to_mlp_results = configs["path_to_mlp_results"]
-    path_to_save_validation_data: str = configs["path_to_save_validation_data"]
-    path_to_save_test_data: str = configs["path_to_save_test_data"]
+    path_for_save_validation_data: str = configs["path_for_save_validation_data"]
+    path_for_save_test_data: str = configs["path_for_save_test_data"]
     n_jobs = configs["num_jobs"]
 
     # pandarallel.initialize(progress_bar=True, nb_workers=8)
@@ -201,7 +243,7 @@ def main():
             "dropout_rate",
             "output_size",
         ]
-    ).progress_apply(calcualte_uncertainties, validation=True)
+    ).progress_apply(calculate_uncertainties, validation=True)
 
     test_uncertainties_results: pd.DataFrame = all_results.groupby(
         [
@@ -215,10 +257,10 @@ def main():
             "dropout_rate",
             "output_size",
         ]
-    ).progress_apply(calcualte_uncertainties, validation=False)
+    ).progress_apply(calculate_uncertainties, validation=False)
 
-    val_uncertainties_results.to_csv(path_to_save_validation_data)
-    test_uncertainties_results.to_csv(path_to_save_test_data)
+    val_uncertainties_results.to_csv(path_for_save_validation_data)
+    test_uncertainties_results.to_csv(path_for_save_test_data)
 
 
 if __name__ == "__main__":

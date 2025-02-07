@@ -11,14 +11,15 @@ num_crossval_folds: 3
 # prediction_threshold: 0.5  # threshold for binary classification
 random_seed: 42
 layer_size: 200
-results_path: "./results_sklearn_nested_complete.nosync/"
-subsample_path: "./subsampled_tasks.csv"
-path_to_fold_info: "./additional.nosync/outer_folds_info.pth"
-num_jobs: 1 # will not actually work
+results_path: "./data.nosync/results_sklearn_nested_regression.nosync/"
+subsample_path: "./subsampled_tasks_regression.csv"
+path_to_fold_info: "./additional.nosync/outer_folds_info_regression.pth"
+num_jobs: 8 # will not actually work
 outlier_only_flag: False
 
 # HYPERPARAMETERS TO INVESTIGATE
 dropout_rate_s: [0.001, 0.05, 0.1, 0.5, 0.9]
+# dropout_rate_s: [0.5, 0.9]
 # dropout_rate_s: [0.1]
 model_precision_s: [
     0.001,
@@ -28,5 +29,7 @@ model_precision_s: [
     1.0,
 ]  # also known as "alpha". Defines the L2 regularization term. The L2 regularization is implemented differently
 # than in Yarin Gal's paper, but the result shold be about the same.
-num_mcdropout_iterations_s: [3, 5, 10, 20, 100]
+num_mcdropout_iterations_s: [3, 5, 10, 20, 100, 1000]
+# num_mcdropout_iterations_s: [3, 5,]
 num_layers_s: [1, 3, 5, 10]
+# num_layers_s: [1,10]

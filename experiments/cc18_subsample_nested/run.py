@@ -31,7 +31,7 @@ logger = getLogger("run")
 # Add argparse for subset_id
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--subset_id", help="Identifier for the subset to focus on", default="test"
+    "--subset_id", help="Identifier for the subset to focus on", default="all"
 )
 parser.add_argument(
     "--error_handling", type=str, help="Error handling method", default="ignore"
@@ -81,7 +81,7 @@ all_dataset_ranges = {
     # "4a": range(16, 17),
     # "4b": range(17, 18),
     # "5": range(18, 20),
-    "all": range(0, 20),
+    "all": range(0, 11),
     "test": [10],
 }
 dataset_id_s = list(
@@ -90,9 +90,9 @@ dataset_id_s = list(
 
 
 def get_already_run_experiments(
-    path_to_ressults_folder: str,
+    path_to_results_folder: str,
 ) -> list[tuple[int | float]]:
-    result_files_raw: list[str] = os.listdir(path_to_ressults_folder)
+    result_files_raw: list[str] = os.listdir(path_to_results_folder)
     # NOTE: example output
     # task0_dropout_rate0.9_model_precision0.9_num_mcdropout_iterations5_num_layers5.pth
     return [
@@ -104,6 +104,7 @@ def get_already_run_experiments(
             int(file.split("_")[9].replace("layers", "").replace(".pth", "")),
         )
         for file in result_files_raw
+        if ".pth" in file
     ]
 
 
@@ -113,8 +114,6 @@ def train_parallel(
     num_inner_folds,
     results_path,
     random_seed,
-    outer_fold_idxs,
-    outer_fold_id,
     experiment_args,
     model_args,
     train_args,
@@ -122,15 +121,18 @@ def train_parallel(
     outlier_flag,
     outer_fold_idxs_s,
 ):
-    for outer_fold_id, outer_fold_idxs in outer_fold_idxs_s[task_num].items():
+    for outer_fold_id, outer_fold_idxs_train_val in outer_fold_idxs_s["train"][
+        task_num
+    ].items():
         train(
             task_num=task_num,
             dataset_id=dataset_id,
             num_inner_folds=num_inner_folds,
             results_path=results_path,
             random_seed=random_seed,
-            outer_fold_idxs=outer_fold_idxs,
+            outer_fold_idxs_train_val=outer_fold_idxs_train_val,
             outer_fold_id=outer_fold_id,
+            outer_fold_idxs_test=outer_fold_idxs_s["test"][task_num][outer_fold_id],
             experiment_args=experiment_args,
             model_args=model_args,
             train_args=train_args,
@@ -287,8 +289,7 @@ def main():
                 num_inner_folds=num_crossval_folds,
                 results_path=results_path,
                 random_seed=random_seed,
-                outer_fold_idxs=...,
-                outer_fold_id=...,
+                outer_fold_idxs_s=outer_fold_idxs_s,
                 experiment_args={
                     "dropout_rate": dropout_rate,
                     "alpha": model_precision,
@@ -302,7 +303,6 @@ def main():
                 train_args={"num_epochs": num_epochs},
                 num_jobs=num_jobs,
                 outlier_flag=outlier_only_flag,
-                outer_fold_idxs_s=outer_fold_idxs_s,
             )
             for (
                 dataset_id,
@@ -326,6 +326,14 @@ def main():
                 * len(num_mcdropout_iterations_s)
                 * len(num_layers_s),
             )
+            if (
+                dataset_id,
+                dropout_rate,
+                model_precision,
+                num_mcdropout_iterations,
+                num_layers,
+            )
+            not in previous_experiments
         )
 
 
