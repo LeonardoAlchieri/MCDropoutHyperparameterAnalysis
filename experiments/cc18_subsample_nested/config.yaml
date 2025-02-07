@@ -14,7 +14,7 @@ layer_size: 200
 results_path: "./data.nosync/results_sklearn_nested_regression.nosync/"
 subsample_path: "./subsampled_tasks_regression.csv"
 path_to_fold_info: "./additional.nosync/outer_folds_info_regression.pth"
-num_jobs: 8 # will not actually work
+num_jobs: 1 # will not actually work
 outlier_only_flag: False
 
 # HYPERPARAMETERS TO INVESTIGATE

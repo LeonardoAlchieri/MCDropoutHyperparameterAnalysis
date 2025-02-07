@@ -11,11 +11,13 @@ from typing import Any
 import os
 
 # import dataset and dataloader for pytoarch
+from torch import chunk
 from tqdm.auto import tqdm
 import itertools
 import argparse
 from warnings import warn
 from joblib import Parallel, delayed
+from tqdm.contrib.concurrent import process_map
 from logging import getLogger, basicConfig, INFO
 
 path.append("./")
@@ -108,19 +110,20 @@ def get_already_run_experiments(
     ]
 
 
-def train_parallel(
-    task_num,
-    dataset_id,
-    num_inner_folds,
-    results_path,
-    random_seed,
-    experiment_args,
-    model_args,
-    train_args,
-    num_jobs,
-    outlier_flag,
-    outer_fold_idxs_s,
-):
+def train_parallel(fn_input):
+    (
+        task_num,
+        dataset_id,
+        num_inner_folds,
+        results_path,
+        random_seed,
+        experiment_args,
+        model_args,
+        train_args,
+        num_jobs,
+        outlier_flag,
+        outer_fold_idxs_s,
+    ) = fn_input
     for outer_fold_id, outer_fold_idxs_train_val in outer_fold_idxs_s["train"][
         task_num
     ].items():
@@ -281,28 +284,27 @@ def main():
             else:
                 continue
     else:
-        warn('Error handling is set to "raise" for parallel processing.')
-        Parallel(n_jobs=num_jobs, backend="loky")(
-            delayed(train_parallel)(
-                task_num=datasets_to_use[dataset_id],
-                dataset_id=dataset_id,
-                num_inner_folds=num_crossval_folds,
-                results_path=results_path,
-                random_seed=random_seed,
-                outer_fold_idxs_s=outer_fold_idxs_s,
-                experiment_args={
+        parallel_args: list[tuple] = [
+            (
+                datasets_to_use[dataset_id],
+                dataset_id,
+                num_crossval_folds,
+                results_path,
+                random_seed,
+                {
                     "dropout_rate": dropout_rate,
                     "alpha": model_precision,
                     "mcdropout_num": num_mcdropout_iterations,
                     "num_layers": num_layers,
                 },
-                model_args={
+                {
                     "layer_size": layer_size,
                     "hidden_activation_type": hidden_activation_type,
                 },
-                train_args={"num_epochs": num_epochs},
-                num_jobs=num_jobs,
-                outlier_flag=outlier_only_flag,
+                {"num_epochs": num_epochs},
+                num_jobs,
+                outlier_only_flag,
+                outer_fold_idxs_s,
             )
             for (
                 dataset_id,
@@ -310,21 +312,12 @@ def main():
                 model_precision,
                 num_mcdropout_iterations,
                 num_layers,
-            ) in tqdm(
-                itertools.product(
-                    dataset_id_s,
-                    dropout_rate_s,
-                    model_precision_s,
-                    num_mcdropout_iterations_s,
-                    num_layers_s,
-                ),
-                desc="Experiments",
-                colour="magenta",
-                total=len(dataset_id_s)
-                * len(dropout_rate_s)
-                * len(model_precision_s)
-                * len(num_mcdropout_iterations_s)
-                * len(num_layers_s),
+            ) in itertools.product(
+                dataset_id_s,
+                dropout_rate_s,
+                model_precision_s,
+                num_mcdropout_iterations_s,
+                num_layers_s,
             )
             if (
                 dataset_id,
@@ -334,7 +327,36 @@ def main():
                 num_layers,
             )
             not in previous_experiments
+        ]
+
+        warn(
+            'Error handling is set to "raise" for parallel processing.', RuntimeWarning
         )
+        process_map(train_parallel, parallel_args, max_workers=num_jobs, chunksize=10)
+
+        # Parallel(n_jobs=num_jobs, backend="loky")(
+        #     delayed(train_parallel)(
+        #         task_num=datasets_to_use[dataset_id],
+        #         dataset_id=dataset_id,
+        #         num_inner_folds=num_crossval_folds,
+        #         results_path=results_path,
+        #         random_seed=random_seed,
+        #         outer_fold_idxs_s=outer_fold_idxs_s,
+        #         experiment_args={
+        #             "dropout_rate": dropout_rate,
+        #             "alpha": model_precision,
+        #             "mcdropout_num": num_mcdropout_iterations,
+        #             "num_layers": num_layers,
+        #         },
+        #         model_args={
+        #             "layer_size": layer_size,
+        #             "hidden_activation_type": hidden_activation_type,
+        #         },
+        #         train_args={"num_epochs": num_epochs},
+        #         num_jobs=num_jobs,
+        #         outlier_flag=outlier_only_flag,
+        #     )
+        # )
 
 
 if __name__ == "__main__":
