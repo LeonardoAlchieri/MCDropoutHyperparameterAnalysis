@@ -14,10 +14,14 @@ ratio_ratio: int = 75
 
 random.seed(random_seed)
 
+# suite_id = 99 # CC18 (classification)
+suite_id = 353 # CTR23 (regression)
+
+task_type: str = "regression"
 
 def main():
     # 99 is the ID of the OpenML-CC18 study
-    suite = openml.study.get_suite(99)
+    suite = openml.study.get_suite(suite_id)
     tasks = {
         task: openml.tasks.get_task(task).get_dataset() for task in tqdm(suite.tasks)
     }
@@ -29,35 +33,35 @@ def main():
         for key, task in tasks.items()
     }
 
-    df = pd.DataFrame.from_dict(tasks, orient="index")
-    df["features_instances_ratio"] = (
-        df["number_of_features"] / df["number_of_instances"]
-    )
+    # df = pd.DataFrame.from_dict(tasks, orient="index")
+    # df["features_instances_ratio"] = (
+    #     df["number_of_features"] / df["number_of_instances"]
+    # )
 
-    quartile_size = np.percentile(df["number_of_instances"], ratio_size)
-    tasks_to_keep = [
-        task
-        for task in tasks.keys()
-        if tasks[task]["number_of_instances"] < quartile_size
-    ]
+    # quartile_size = np.percentile(df["number_of_instances"], ratio_size)
+    # tasks_to_keep = [
+    #     task
+    #     for task in tasks.keys()
+    #     if tasks[task]["number_of_instances"] < quartile_size
+    # ]
 
-    quartile_ratio = np.percentile(df["features_instances_ratio"], ratio_ratio)
-    tasks_to_keep = [
-        task
-        for task in tasks_to_keep
-        if tasks[task]["number_of_features"] / tasks[task]["number_of_instances"]
-        < quartile_ratio
-    ]
+    # quartile_ratio = np.percentile(df["features_instances_ratio"], ratio_ratio)
+    # tasks_to_keep = [
+    #     task
+    #     for task in tasks_to_keep
+    #     if tasks[task]["number_of_features"] / tasks[task]["number_of_instances"]
+    #     < quartile_ratio
+    # ]
 
-    if len(tasks_to_keep) < n_subsample:
-        raise ValueError(
-            f"Only {len(tasks_to_keep)} tasks available, cannot subsample {n_subsample} tasks."
-        )
-
+    # if len(tasks_to_keep) < n_subsample:
+    #     raise ValueError(
+    #         f"Only {len(tasks_to_keep)} tasks available, cannot subsample {n_subsample} tasks."
+    #     )
+    tasks_to_keep = list(tasks.keys())
     sampled_tasks = random.sample(tasks_to_keep, n_subsample)
 
     # save list to csv
-    with open("subsampled_tasks.csv", "w") as f:
+    with open(f"subsampled_tasks_{task_type}.csv", "w") as f:
         for task in sampled_tasks:
             f.write("%s\n" % task)
 
