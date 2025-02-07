@@ -2,18 +2,21 @@ import os
 from warnings import warn
 
 import numpy as np
+from sklearn.base import ClassifierMixin
 import torch
 
 # import dataset and dataloader for pytoarch
 import torch.utils.data
 from scipy.stats import entropy, mode
+from numpy import mean
 from sklearn.ensemble import IsolationForest
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.utils._testing import ignore_warnings
+from sklearn.metrics import mean_squared_error
 from tqdm.auto import tqdm
 
 from src.model.sklearn import MLPDropoutClassifier, MLPDropoutRegressor
@@ -35,7 +38,93 @@ def calculate_anonmaly_info(x: np.ndarray) -> np.ndarray:
     return anomaly_vals
 
 
-def get_prediction_metrics(
+def get_metrics(
+    classifier: MLPDropoutClassifier | MLPDropoutRegressor,
+    experiment_args: dict,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+    task_name: str,
+    task_type: str,
+    output_size: int,
+    random_seed: int = 42,
+    x_test: np.ndarray | None = None,
+    y_test: np.ndarray | None = None,
+):
+    if task_type == "regression":
+        (
+            y_val_preds,
+            val_mse,
+            val_normalized_mse,
+            val_log_likelihood,
+            val_outlier_vals,
+            val_anomaly_vals_test,
+        ) = get_regression_metrics(
+            classifier=classifier,
+            x=x_val,
+            y=y_val,
+            experiment_args=experiment_args,
+            random_seed=random_seed,
+        )
+        (
+            y_test_preds,
+            test_mse,
+            test_normalized_mse,
+            test_log_likelihood,
+            test_outlier_vals,
+            test_anomaly_vals_test,
+        ) = get_regression_metrics(
+            classifier=classifier,
+            x=x_test,
+            y=y_test,
+            experiment_args=experiment_args,
+            random_seed=random_seed,
+        )
+        return {
+            "task_name": task_name,
+            "task_type": task_type,
+            "output_size": output_size,
+            "val_mse": val_mse,
+            "val_nmse": val_normalized_mse,
+            "val_log_likelihood": val_log_likelihood,
+            "y_val_preds": y_val_preds,
+            "val_outlier_vals": val_outlier_vals,
+            "val_anomaly_vals_test": val_anomaly_vals_test,
+            "test_mse": test_mse,
+            "test_nmse": test_normalized_mse,
+            "test_log_likelihood": test_log_likelihood,
+            "y_test_preds": y_test_preds,
+            "test_outlier_vals": test_outlier_vals,
+            "test_anomaly_vals_test": test_anomaly_vals_test,
+        }
+
+    elif task_type == "classification":
+        raise NotImplementedError(
+            "Classification has to be double checked. Do not try to run now"
+        )
+        return {
+            "task_name": task_name,
+            "task_type": task_type,
+            "output_size": output_size,
+            "val_accuracy": val_accuracy,
+            "val_f1": val_f1,
+            "val_mcc": val_mcc,
+            "y_val_preds_proba": y_val_preds_proba,
+            "val_outlier_vals": val_outlier_vals,
+            "val_anomaly_vals_test": val_anomaly_vals_test,
+            "test_accuracy": test_accuracy,
+            "test_f1": test_f1,
+            "test_mcc": test_mcc,
+            "y_test_preds_proba": y_test_preds_proba,
+            "test_outlier_vals": test_outlier_vals,
+            "test_anomaly_vals_test": test_anomaly_vals_test,
+            # "entropies": entropies,
+        }
+    else:
+        raise OutputTypeError("task_type", task_type, ["classification", "regression"])
+    ...
+
+
+def get_classification_metrics(
     classifier: MLPDropoutClassifier,
     x: np.ndarray,
     y: np.ndarray,
@@ -73,23 +162,37 @@ def get_prediction_metrics(
     return accuracy, f1, mcc, y_preds_proba, outlier_vals, anomaly_vals_test
 
 
+def get_regression_metrics(
+    classifier: MLPDropoutRegressor,
+    x: np.ndarray,
+    y: np.ndarray,
+    experiment_args: dict,
+    random_seed: int = 42,
+):
+    y_preds = np.asarray([classifier.predict(x) for _ in range(experiment_args["mcdropout_num"])])
+    y_pred = mean(y_preds, axis=0)
+
+    mse = mean_squared_error(y, y_pred)
+    normalized_mse = mean_squared_error(y, y_pred) / mean_squared_error(y, np.repeat(np.mean(y), repeats=len(y)))
+
+    log_likelihood = -0.5 * np.mean((y - y_pred) ** 2)
+
+    outlier_vals = calculate_outlier_info(x=x, random_seed=random_seed)
+    anomaly_vals_test = calculate_anonmaly_info(x=x)
+    return y_preds, mse, normalized_mse, log_likelihood, outlier_vals, anomaly_vals_test
+
+
 @ignore_warnings(category=ConvergenceWarning)
-def perform_fold_prediction(
+def train_model(
     x_train: np.ndarray,
     y_train: np.ndarray,
-    x_val: np.ndarray,
-    y_val: np.ndarray,
-    name: str,
     task_type: str,
     output_size: int,
     model_args: dict,
     train_args: dict,
     experiment_args: dict,
-    x_test: np.ndarray | None = None,
-    y_test: np.ndarray | None = None,
     random_seed: int = 42,
     batch_size: int = 200,
-    num_jobs: int = -1,
 ):
     if task_type == "classification":
         raise NotImplementedError(
@@ -115,7 +218,7 @@ def perform_fold_prediction(
         #     y_val_preds_proba,
         #     val_outlier_vals,
         #     val_anomaly_vals_test,
-        # ) = get_prediction_metrics(
+        # ) = get_classification_metrics(
         #     classifier=classifier,
         #     x=x_val,
         #     y=y_val,
@@ -131,7 +234,7 @@ def perform_fold_prediction(
         #         y_test_preds_proba,
         #         test_outlier_vals,
         #         test_anomaly_vals_test,
-        #     ) = get_prediction_metrics(
+        #     ) = get_classification_metrics(
         #         classifier=classifier,
         #         x=x_test,
         #         y=y_test,
@@ -273,7 +376,12 @@ def train(
         y_test = y[outer_fold_idxs_test]
         del x, y
 
-    kf = StratifiedKFold(
+    if task_type == "classification":
+        kf = StratifiedKFold(
+        n_splits=num_inner_folds, random_state=random_seed, shuffle=True
+    )
+    else:
+        kf = KFold(
         n_splits=num_inner_folds, random_state=random_seed, shuffle=True
     )
 
@@ -289,23 +397,25 @@ def train(
         x_train, x_val = x_train_val[train_index], x_train_val[val_index]
         y_train, y_val = y_train_val[train_index], y_train_val[val_index]
         if not outlier_flag:
-            inner_fold_result = perform_fold_prediction(
+            trained_model = train_model(
                 x_train=x_train,
                 y_train=y_train,
-                x_val=x_val,
-                y_val=y_val,
-                x_test=x_test,
-                y_test=y_test,
-                name=name,
                 task_type=task_type,
                 output_size=output_size,
                 model_args=model_args,
                 train_args=train_args,
                 experiment_args=experiment_args,
                 random_seed=random_seed,
-                num_jobs=num_jobs,
             )
         else:
+            warn(
+                """This method is deprecated.
+                 It was used to compute if a single sample (from val and test sets) 
+                 are outliers compared to all other samples.
+                 
+                 Its usage may break things""",
+                DeprecationWarning,
+            )
             inner_fold_result = perform_only_outlier_detection(
                 x_train=x_train,
                 y_train=y_train,
@@ -322,6 +432,18 @@ def train(
                 random_seed=random_seed,
                 num_jobs=num_jobs,
             )
+        inner_fold_result = get_metrics(
+            classifier=trained_model,
+            experiment_args=experiment_args,
+            x_val=x_val,
+            y_val=y_val,
+            task_name=name,
+            task_type=task_type,
+            output_size=output_size,
+            random_seed=random_seed,
+            x_test=x_test,
+            y_test=y_test,
+        )
         inner_fold_result.update(
             {
                 "outer_fold": outer_fold_id,
@@ -353,7 +475,7 @@ def run_dropout_estimation(fn_input):
         fn_input
     )
     # TODO: implement early stopping using val set
-    classifier = perform_fold_prediction(
+    classifier = train_model(
         x_train=dataset["train"][0].astype("float32"),
         y_train=dataset["train"][1].astype("float32"),
         x_val=dataset["val"][0],
@@ -368,9 +490,9 @@ def run_dropout_estimation(fn_input):
         train_args={"num_epochs": num_epochs},
         experiment_args={
             "alpha": alpha,
-            "num_layers": model_args['num_layers'],
+            "num_layers": model_args["num_layers"],
             "dropout_rate": p,
-            "dropout_input": model_args['dropout_input'],
+            "dropout_input": model_args["dropout_input"],
         },
         x_test=dataset["test"][0],
         y_test=dataset["test"][1],

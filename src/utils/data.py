@@ -32,24 +32,27 @@ def get_dataset(task_num: int) -> tuple[torch.Tensor, torch.Tensor, str, str, in
     dataset = dataset_obj.get_data()[0]
 
     # drop nan
-    dataset = dataset.dropna(how="any")
+    dataset = dataset.dropna(how="all")
 
     x = dataset.drop(columns=[task.target_name])
     x = pd.get_dummies(x)
     # substitute the NaN values with the mean of the column
+    x = x.fillna(x.mean())
+    
     x = torch.tensor(x.values.astype(float), dtype=torch.float32)
 
     y = dataset[task.target_name].to_numpy()
-    y, num_classes = prepare_prediction_array(y)
 
     name = dataset_obj.name
 
     prediction_type = task.task_type
     if prediction_type == "Supervised Classification":
+        y, num_classes = prepare_prediction_array(y)
         prediction_type = (
             "multiclass classification" if num_classes > 1 else "binary classification"
         )
-    elif "Regression" in prediction_type:
+    elif "Supervised Regression" in prediction_type:
+        num_classes: int = 1
         prediction_type = "regression"
     else:
         raise ValueError(
