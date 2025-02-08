@@ -4,14 +4,16 @@ from gc import collect as pick_up_trash
 from glob import glob
 from logging import INFO, basicConfig, getLogger
 from sys import path
+from time import time
 from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 import torch
 from joblib import Parallel, delayed
-from pandarallel import pandarallel
+from tqdm.contrib.concurrent import process_map
 from tqdm.auto import tqdm
+import psutil
 
 path.append("./")
 
@@ -27,8 +29,10 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def prepare_dict_for_regression(path_to_result: str, fold_id: int) -> dict:
-    loaded_dict_base = torch.load(path_to_result, map_location=torch.device("cpu"))
+def prepare_dict_for_regression(path_to_result: str, fold_id: int = 1) -> dict:
+    # FIXME: torch documentation suggests to avoid using weights_only=False
+    # for safety reasons. However, I cannot load with weights_only=True
+    loaded_dict_base = torch.load(path_to_result, map_location=torch.device("cpu"), weights_only=False)
     if len(loaded_dict_base[fold_id]) == 0:
         return None
 
@@ -162,21 +166,54 @@ def main():
     path_to_mlp_results = configs["path_to_mlp_results"]
     path_for_save_validation_data: str = configs["path_for_save_validation_data"]
     path_for_save_test_data: str = configs["path_for_save_test_data"]
+    ram_limit: int = configs["ram_limit"]
     n_jobs = configs["num_jobs"]
 
     # pandarallel.initialize(progress_bar=True, nb_workers=8)
-    tqdm.pandas()
 
     all_results_path = glob(path_to_mlp_results + "*.pth")
 
-    all_results_all_folds = Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(prepare_dict_for_regression)(path, 1)
-        for path in tqdm(all_results_path, total=len(all_results_path))
-    )
-    all_results_fold1 = [item[0] for item in all_results_all_folds if item is not None]
-    all_results_fold2 = [item[1] for item in all_results_all_folds if item is not None]
-    all_results_fold3 = [item[2] for item in all_results_all_folds if item is not None]
-    del all_results_all_folds
+    # all_results_all_folds = process_map(prepare_dict_for_regression, 
+    #                                     all_results_path, 
+    #                                     max_workers=n_jobs, 
+    #                                     desc='Loading results',
+    #                                     chunksize=10)
+    # all_results_all_folds = Parallel(n_jobs=n_jobs, backend="loky")(
+    #     delayed(prepare_dict_for_regression)(path, 1)
+    #     for path in tqdm(all_results_path, total=len(all_results_path))
+    # )
+    # calculate current RAM usage by this process
+    
+    # logger.info(f"RAM usage: {process.memory_info().rss / 1024 ** 2} MB")
+    # all_results_all_folds = [
+    #     prepare_dict_for_regression(path, 1)
+    #     for path in tqdm(all_results_path[:1000], total=len(all_results_path), desc=f'Loading data. RAM: {process.memory_info().rss / 1024 ** 2} MB')
+    # ]
+    # all_results_all_folds = []
+    
+    process = psutil.Process(os.getpid())
+    all_results_fold1 = []
+    all_results_fold2 = []
+    all_results_fold3 = []
+    ram_usage = process.memory_info().rss / 1024 ** 2 / 1024
+    for path in (pbar := tqdm(all_results_path, 
+                              total=len(all_results_path), 
+                              desc=('Loading data. RAM: %.1f GB' % (ram_usage)))):
+        loaded_data = prepare_dict_for_regression(path, 1)
+        if loaded_data is None:
+            continue
+        all_results_fold1.append(loaded_data[0])
+        all_results_fold2.append(loaded_data[1])
+        all_results_fold3.append(loaded_data[2])
+        ram_usage = process.memory_info().rss / 1024 ** 2 / 1024
+        if ram_usage > ram_limit:
+            raise MemoryError('RAM usage is too high (%i GB).' % ram_usage)
+        pbar.set_description(('Loading data. RAM: %.1f GB' % ram_usage))
+        
+    # all_results_fold1 = [item[0] for item in all_results_all_folds if item is not None]
+    # all_results_fold2 = [item[1] for item in all_results_all_folds if item is not None]
+    # all_results_fold3 = [item[2] for item in all_results_all_folds if item is not None]
+    # del all_results_all_folds
 
     pick_up_trash()
 
@@ -231,6 +268,7 @@ def main():
     all_results.index.names = ["outer_fold", "inner_fold", "idx"]
     all_results = all_results.reset_index(drop=False, inplace=False)
 
+    tqdm.pandas(desc="Calculate Uncertainties")
     val_uncertainties_results: pd.DataFrame = all_results.groupby(
         [
             "outer_fold",
@@ -259,8 +297,11 @@ def main():
         ]
     ).progress_apply(calculate_uncertainties, validation=False)
 
-    val_uncertainties_results.to_csv(path_for_save_validation_data)
-    test_uncertainties_results.to_csv(path_for_save_test_data)
+    start_saving = time()
+    val_uncertainties_results.to_parquet(path_for_save_validation_data)
+    print(f'Saving validation data took {time() - start_saving} s')
+    test_uncertainties_results.to_parquet(path_for_save_test_data)
+    print(f'Saving test data took {time() - start_saving} s')
 
 
 if __name__ == "__main__":
