@@ -4,9 +4,11 @@ from gc import collect as pick_up_trash
 from glob import glob
 from logging import INFO, basicConfig, getLogger
 from sys import path
+from warnings import warn
 from time import time
 from typing import Any, Literal
 
+from sklearn.utils._testing import ignore_warnings
 import numpy as np
 import pandas as pd
 import torch
@@ -14,6 +16,8 @@ from joblib import Parallel, delayed
 from tqdm.contrib.concurrent import process_map
 from tqdm.auto import tqdm
 import psutil
+import ctypes
+
 
 path.append("./")
 
@@ -32,7 +36,9 @@ args = parser.parse_args()
 def prepare_dict_for_regression(path_to_result: str, fold_id: int = 1) -> dict:
     # FIXME: torch documentation suggests to avoid using weights_only=False
     # for safety reasons. However, I cannot load with weights_only=True
-    loaded_dict_base = torch.load(path_to_result, map_location=torch.device("cpu"), weights_only=False)
+    loaded_dict_base = torch.load(
+        path_to_result, map_location=torch.device("cpu"), weights_only=False
+    )
     if len(loaded_dict_base[fold_id]) == 0:
         return None
 
@@ -130,7 +136,7 @@ def calculate_uncertainties(
 ) -> pd.DataFrame:
     if len(df) > 1:
         raise ValueError("More than one result in the group. This should not happen.")
-    
+
     task: Literal["classification", "regression"] = df["task_type"].iloc[0]
 
     if task == "classification":
@@ -149,6 +155,48 @@ def calculate_uncertainties(
     )
 
 
+def prepare_result_df(loaded_data: pd.DataFrame, idx: int) -> pd.DataFrame | None:
+    if loaded_data is None:
+        return None
+    loaded_data = [
+        pd.DataFrame.from_dict(res, orient="index", columns=[(idx * 3) + (i)]).T
+        for i, res in enumerate(loaded_data)
+        if res is not None
+    ]
+    if len(loaded_data) < 3:
+        warn(f"Less than 3 folds for {path}. Skipping.", RuntimeWarning)
+        return None
+    path_results = pd.concat(
+        loaded_data, keys=["fold1", "fold2", "fold3"], names=["fold"]
+    )
+    path_results = path_results.set_index(["outer_fold", "inner_fold"], inplace=False)
+    path_results = path_results.sort_index(inplace=False)
+
+    path_results.index = pd.MultiIndex.from_tuples(
+        [
+            (outer_fold, inner_fold, i)
+            for i, (outer_fold, inner_fold) in enumerate(path_results.index)
+        ]
+    )
+    return path_results
+
+
+def cleanup_results(data: pd.DataFrame) -> pd.DataFrame:
+    data["alpha"] = data["experiment_args"].apply(lambda x: x["alpha"])
+    data["mcdropout_num"] = data["experiment_args"].apply(lambda x: x["mcdropout_num"])
+    data["num_layers"] = data["experiment_args"].apply(lambda x: x["num_layers"])
+    data["dropout_rate"] = data["experiment_args"].apply(lambda x: x["dropout_rate"])
+    data["layer_size"] = data["model_args"].apply(lambda x: x["layer_size"])
+    data["hidden_activation_type"] = data["model_args"].apply(
+        lambda x: x["hidden_activation_type"]
+    )
+    data.drop(columns=["experiment_args", "model_args", "train_args"], inplace=True)
+    data.index.names = ["outer_fold", "inner_fold", "idx"]
+    data = data.reset_index(drop=False, inplace=False)
+    return data
+
+
+@ignore_warnings(category=DeprecationWarning)
 def main():
 
     path_to_script_folder: str = os.path.dirname(os.path.abspath(__file__))
@@ -167,141 +215,97 @@ def main():
     path_for_save_validation_data: str = configs["path_for_save_validation_data"]
     path_for_save_test_data: str = configs["path_for_save_test_data"]
     ram_limit: int = configs["ram_limit"]
-    n_jobs = configs["num_jobs"]
-
-    # pandarallel.initialize(progress_bar=True, nb_workers=8)
+    # n_jobs = configs["num_jobs"]
 
     all_results_path = glob(path_to_mlp_results + "*.pth")
 
-    # all_results_all_folds = process_map(prepare_dict_for_regression, 
-    #                                     all_results_path, 
-    #                                     max_workers=n_jobs, 
-    #                                     desc='Loading results',
-    #                                     chunksize=10)
-    # all_results_all_folds = Parallel(n_jobs=n_jobs, backend="loky")(
-    #     delayed(prepare_dict_for_regression)(path, 1)
-    #     for path in tqdm(all_results_path, total=len(all_results_path))
-    # )
-    # calculate current RAM usage by this process
-    
-    # logger.info(f"RAM usage: {process.memory_info().rss / 1024 ** 2} MB")
-    # all_results_all_folds = [
-    #     prepare_dict_for_regression(path, 1)
-    #     for path in tqdm(all_results_path[:1000], total=len(all_results_path), desc=f'Loading data. RAM: {process.memory_info().rss / 1024 ** 2} MB')
-    # ]
-    # all_results_all_folds = []
-    
     process = psutil.Process(os.getpid())
-    all_results_fold1 = []
-    all_results_fold2 = []
-    all_results_fold3 = []
-    ram_usage = process.memory_info().rss / 1024 ** 2 / 1024
-    for path in (pbar := tqdm(all_results_path, 
-                              total=len(all_results_path), 
-                              desc=('Loading data. RAM: %.1f GB' % (ram_usage)))):
+    ram_usage = process.memory_info().rss / 1024**2 / 1024
+    current_os = os.uname().sysname
+    if current_os == "Darwin":
+        libc = ctypes.CDLL("libSystem.dylib")
+    elif current_os == "Linux":
+        libc = ctypes.CDLL("libc.so.6")
+    else:
+        raise OSError("Unsupported OS. Only MacOS and Linux are supported. Received %s" % current_os)
+    idx = 0
+    for path in (
+        pbar := tqdm(
+            all_results_path[:50],
+            total=len(all_results_path),
+            desc=("Loading data. RAM: %.1f GB" % (ram_usage)),
+        )
+    ):
         loaded_data = prepare_dict_for_regression(path, 1)
-        if loaded_data is None:
+
+        path_results = prepare_result_df(loaded_data, idx)
+        if path_results is None:
             continue
-        all_results_fold1.append(loaded_data[0])
-        all_results_fold2.append(loaded_data[1])
-        all_results_fold3.append(loaded_data[2])
-        ram_usage = process.memory_info().rss / 1024 ** 2 / 1024
+
+        path_results = cleanup_results(path_results)
+        val_result = path_results.groupby(
+            [
+                "outer_fold",
+                "inner_fold",
+                "task_name",
+                "task_num",
+                "alpha",
+                "mcdropout_num",
+                "num_layers",
+                "dropout_rate",
+                "output_size",
+            ]
+        ).apply(calculate_uncertainties, validation=True)
+
+        test_result = path_results.groupby(
+            [
+                "outer_fold",
+                "inner_fold",
+                "task_name",
+                "task_num",
+                "alpha",
+                "mcdropout_num",
+                "num_layers",
+                "dropout_rate",
+                "output_size",
+            ],
+        ).apply(calculate_uncertainties, validation=False)
+
+        val_result.to_csv(
+            path_for_save_validation_data,
+            mode="a" if idx > 0 else "w",
+            header=False if idx > 0 else True,
+        )
+        test_result.to_csv(
+            path_for_save_test_data,
+            mode="a" if idx > 0 else "w",
+            header=False if idx > 0 else True,
+        )
+
+        ram_usage = process.memory_info().rss / 1024**2 / 1024
         if ram_usage > ram_limit:
-            raise MemoryError('RAM usage is too high (%i GB).' % ram_usage)
-        pbar.set_description(('Loading data. RAM: %.1f GB' % ram_usage))
-        
-    # all_results_fold1 = [item[0] for item in all_results_all_folds if item is not None]
-    # all_results_fold2 = [item[1] for item in all_results_all_folds if item is not None]
-    # all_results_fold3 = [item[2] for item in all_results_all_folds if item is not None]
-    # del all_results_all_folds
+            raise MemoryError("RAM usage is too high (%i GB)." % ram_usage)
+        if current_os == "Darwin":
+            libc.malloc_zone_pressure_relief(0)
+        else:
+            libc.malloc_trim(0)
+        pbar.set_description(("Loading data. RAM: %.1f GB" % ram_usage))
+        idx += 3
 
-    pick_up_trash()
+        del path_results
+        del loaded_data
+        del val_result
+        del test_result
+        pick_up_trash()
 
-    all_results_fold1_df = [res for res in all_results_fold1 if res is not None]
-    all_results_fold2_df = [res for res in all_results_fold2 if res is not None]
-    all_results_fold3_df = [res for res in all_results_fold3 if res is not None]
+    # val_uncertainties_results = pd.concat(val_results)
+    # test_uncertainties_results = pd.concat(test_results)
 
-    all_results_fold1_df = pd.DataFrame(all_results_fold1_df)
-    all_results_fold2_df = pd.DataFrame(all_results_fold2_df)
-    all_results_fold3_df = pd.DataFrame(all_results_fold3_df)
-
-    # concat the three datasets, using a new index called "fold"
-    all_results = pd.concat(
-        [all_results_fold1_df, all_results_fold2_df, all_results_fold3_df],
-        keys=["fold1", "fold2", "fold3"],
-        names=["fold"],
-    )
-    del all_results_fold1_df
-    del all_results_fold2_df
-    del all_results_fold3_df
-
-    all_results = all_results.set_index(["outer_fold", "inner_fold"], inplace=False)
-    all_results = all_results.sort_index(inplace=False)
-
-    all_results.index = pd.MultiIndex.from_tuples(
-        [
-            (outer_fold, inner_fold, i)
-            for i, (outer_fold, inner_fold) in enumerate(all_results.index)
-        ]
-    )
-
-    pick_up_trash()
-    all_results["alpha"] = all_results["experiment_args"].apply(lambda x: x["alpha"])
-    all_results["mcdropout_num"] = all_results["experiment_args"].apply(
-        lambda x: x["mcdropout_num"]
-    )
-    all_results["num_layers"] = all_results["experiment_args"].apply(
-        lambda x: x["num_layers"]
-    )
-    all_results["dropout_rate"] = all_results["experiment_args"].apply(
-        lambda x: x["dropout_rate"]
-    )
-    all_results["layer_size"] = all_results["model_args"].apply(
-        lambda x: x["layer_size"]
-    )
-    all_results["hidden_activation_type"] = all_results["model_args"].apply(
-        lambda x: x["hidden_activation_type"]
-    )
-    all_results.drop(
-        columns=["experiment_args", "model_args", "train_args"], inplace=True
-    )
-    all_results.index.names = ["outer_fold", "inner_fold", "idx"]
-    all_results = all_results.reset_index(drop=False, inplace=False)
-
-    tqdm.pandas(desc="Calculate Uncertainties")
-    val_uncertainties_results: pd.DataFrame = all_results.groupby(
-        [
-            "outer_fold",
-            "inner_fold",
-            "task_name",
-            "task_num",
-            "alpha",
-            "mcdropout_num",
-            "num_layers",
-            "dropout_rate",
-            "output_size",
-        ]
-    ).progress_apply(calculate_uncertainties, validation=True)
-
-    test_uncertainties_results: pd.DataFrame = all_results.groupby(
-        [
-            "outer_fold",
-            "inner_fold",
-            "task_name",
-            "task_num",
-            "alpha",
-            "mcdropout_num",
-            "num_layers",
-            "dropout_rate",
-            "output_size",
-        ]
-    ).progress_apply(calculate_uncertainties, validation=False)
-
-    start_saving = time()
-    val_uncertainties_results.to_parquet(path_for_save_validation_data)
-    print(f'Saving validation data took {time() - start_saving} s')
-    test_uncertainties_results.to_parquet(path_for_save_test_data)
-    print(f'Saving test data took {time() - start_saving} s')
+    # start_saving = time()
+    # val_uncertainties_results.to_parquet(path_for_save_validation_data)
+    # print(f'Saving validation data took {time() - start_saving} s')
+    # test_uncertainties_results.to_parquet(path_for_save_test_data)
+    # print(f'Saving test data took {time() - start_saving} s')
 
 
 if __name__ == "__main__":
