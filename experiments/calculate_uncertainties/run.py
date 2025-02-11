@@ -229,9 +229,10 @@ def main():
     idx = 0
     for path in (
         pbar := tqdm(
-            all_results_path[:50],
+            all_results_path,
             total=len(all_results_path),
             desc=("Loading data"),
+            smoothing=0,
         )
     ):
         try:

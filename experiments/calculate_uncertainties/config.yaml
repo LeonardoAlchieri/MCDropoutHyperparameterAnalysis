@@ -1,5 +1,5 @@
 path_to_mlp_results: "./data.nosync/results_sklearn_nested_regression.nosync/"
-path_for_save_validation_data: "./data.nosync/results_sklearn_nested_regression.nosync/uncertainties_validation-PARTIAL2.csv"
-path_for_save_test_data: "./data.nosync/results_sklearn_nested_regression.nosync/uncertainties_test-PARTIAL2.csv"
+path_for_save_validation_data: "./data.nosync/results_sklearn_nested_regression.nosync/uncertainties_validation.csv"
+path_for_save_test_data: "./data.nosync/results_sklearn_nested_regression.nosync/uncertainties_test.csv"
 num_jobs: 1 # will not actually work
 ram_limit: 250 # in GB
