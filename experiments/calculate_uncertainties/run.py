@@ -219,8 +219,6 @@ def main():
 
     all_results_path = glob(path_to_mlp_results + "*.pth")
 
-    process = psutil.Process(os.getpid())
-    ram_usage = process.memory_info().rss / 1024**2 / 1024
     current_os = os.uname().sysname
     if current_os == "Darwin":
         libc = ctypes.CDLL("libSystem.dylib")
@@ -233,7 +231,7 @@ def main():
         pbar := tqdm(
             all_results_path[:50],
             total=len(all_results_path),
-            desc=("Loading data. RAM: %.1f GB" % (ram_usage)),
+            desc=("Loading data"),
         )
     ):
         try:
@@ -287,21 +285,20 @@ def main():
             header=False if idx > 0 else True,
         )
 
-        ram_usage = process.memory_info().rss / 1024**2 / 1024
-        if ram_usage > ram_limit:
-            raise MemoryError("RAM usage is too high (%i GB)." % ram_usage)
+        
         if current_os == "Darwin":
             libc.malloc_zone_pressure_relief(0)
         else:
             libc.malloc_trim(0)
-        pbar.set_description(("Loading data. RAM: %.1f GB" % ram_usage))
-        idx += 3
-
+        
         del path_results
         del loaded_data
         del val_result
         del test_result
         pick_up_trash()
+        
+        idx += 3
+
 
     # val_uncertainties_results = pd.concat(val_results)
     # test_uncertainties_results = pd.concat(test_results)
