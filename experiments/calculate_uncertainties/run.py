@@ -12,10 +12,7 @@ from sklearn.utils._testing import ignore_warnings
 import numpy as np
 import pandas as pd
 import torch
-from joblib import Parallel, delayed
-from tqdm.contrib.concurrent import process_map
 from tqdm.auto import tqdm
-import psutil
 import ctypes
 
 
@@ -237,7 +234,7 @@ def main():
     ):
         try:
             loaded_data = prepare_dict_for_regression(path, 1)
-        except RuntimeError as e:
+        except (RuntimeError, OSError) as e:
             warn(f"Error while loading data: {e}. Skipping this file.")
             logger.error(f"Skipping file {path} due to error: {e}")
             continue
