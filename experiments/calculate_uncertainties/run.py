@@ -236,7 +236,12 @@ def main():
             desc=("Loading data. RAM: %.1f GB" % (ram_usage)),
         )
     ):
-        loaded_data = prepare_dict_for_regression(path, 1)
+        try:
+            loaded_data = prepare_dict_for_regression(path, 1)
+        except RuntimeError as e:
+            warn(f"Error while loading data: {e}. Skipping this file.")
+            logger.error(f"Skipping file {path} due to error: {e}")
+            continue
 
         path_results = prepare_result_df(loaded_data, idx)
         if path_results is None:
